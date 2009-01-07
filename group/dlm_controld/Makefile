@@ -8,7 +8,7 @@ TARGET = dlm_controld
 SBINDIRT = dlm_controld
 endif
 
-all: depends ${TARGET}
+all: ${TARGET}
 
 include $(OBJDIR)/make/cobj.mk
 include $(OBJDIR)/make/clean.mk
@@ -35,9 +35,9 @@ endif
 CFLAGS += -I${ccsincdir} -I${cmanincdir} -I${logtincdir} 
 CFLAGS += -I${dlmincdir} -I${dlmcontrolincdir}
 CFLAGS += -I${corosyncincdir} -I${openaisincdir}
-CFLAGS += -I$(SRCDIR)/fence/libfenced/
+CFLAGS += -I${groupincdir} -I${fencedincdir}
 CFLAGS += -I${KERNEL_SRC}/include/
-CFLAGS += -I$(S)/../lib/ -I$(S)/../include/
+CFLAGS += -I$(S)/../include/
 ifdef enable_pacemaker
 CFLAGS += -I${incdir}/heartbeat -I${incdir}/pacemaker
 CFLAGS += `pkg-config glib-2.0 --cflags`
@@ -49,27 +49,24 @@ LDFLAGS += -L${dlmlibdir} -ldlm
 LDFLAGS += -L${logtlibdir} -llogthread
 LDFLAGS += -L${openaislibdir} -lSaCkpt
 LDFLAGS += -L${corosynclibdir} -lcpg 
-LDFLAGS += -L../lib -lgroup
+LDFLAGS += -L${grouplibdir} -lgroup
 LDFLAGS += -L${libdir}
 
-LDDEPS += ../lib/libgroup.a
+LDDEPS += ${grouplibdir}/libgroup.a
 
 PCMK_LDFLAGS += -lcib -lcrmcommon -lcrmcluster -ltotem_pg
 PCMK_LDFLAGS += `pkg-config glib-2.0 --libs`
 PCMK_LDFLAGS += `xml2-config --libs`
 
 CMAN_LDFLAGS += -L${ccslibdir} -L${cmanlibdir} -lccs -lcman
-CMAN_LDFLAGS += -L../../fence/libfenced/ -lfenced
-CMAN_LDDEPS += ../../fence/libfenced/libfenced.a
+CMAN_LDFLAGS += -L${fencedlibdir} -lfenced
+CMAN_LDDEPS += ${fencedlibdir}/libfenced.a
 
 dlm_controld: ${OBJS} ${LDDEPS} ${CMAN_LDDEPS}
 	$(CC) -o $@ $^ $(LDFLAGS) $(CMAN_LDFLAGS)
 
 dlm_controld.pcmk: ${OBJS} ${LDDEPS} ${PCMK_LDDEPS}
 	$(CC) -o $@ $^ $(LDFLAGS) $(PCMK_LDFLAGS)
-
-depends:
-	$(MAKE) -C ../lib all
 
 clean: generalclean
 
