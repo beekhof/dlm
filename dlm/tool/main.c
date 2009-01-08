@@ -41,6 +41,7 @@ static int dump_mstcpy = 0;
 static mode_t create_mode = 0600;
 static int verbose;
 static int wide;
+static int summarize;
 
 #define MAX_LS 128
 #define MAX_NODES 128
@@ -53,7 +54,43 @@ static int wide;
 struct dlmc_lockspace lss[MAX_LS];
 struct dlmc_node nodes[MAX_NODES];
 
-static int rsb_nodeid, print_granted, print_convert, print_waiting, print_lookup;
+struct rinfo {
+	int print_granted;
+	int print_convert;
+	int print_waiting;
+	int print_lookup;
+	int namelen;
+	int nodeid;
+	int lvb;
+	unsigned int lkb_count;
+	unsigned int lkb_granted;
+	unsigned int lkb_convert;
+	unsigned int lkb_waiting;
+	unsigned int lkb_lookup;
+	unsigned int lkb_wait_msg;
+	unsigned int lkb_master_copy;
+	unsigned int lkb_local_copy;
+	unsigned int lkb_process_copy;
+};
+
+struct summary {
+	unsigned int rsb_total;
+	unsigned int rsb_with_lvb;
+	unsigned int rsb_no_locks;
+	unsigned int rsb_lookup;
+	unsigned int rsb_master;
+	unsigned int rsb_local;
+	unsigned int rsb_nodeid_error;
+	unsigned int lkb_count;
+	unsigned int lkb_granted;
+	unsigned int lkb_convert;
+	unsigned int lkb_waiting;
+	unsigned int lkb_lookup;
+	unsigned int lkb_wait_msg;
+	unsigned int lkb_master_copy;
+	unsigned int lkb_local_copy;
+	unsigned int lkb_process_copy;
+};
 
 char *mode_str(int mode)
 {
@@ -93,6 +130,8 @@ static void print_usage(void)
 	printf("  -m <mode>        Permission mode for lockspace device (octal), default 0600\n");
 	printf("  -M               Print MSTCPY locks in lockdump\n"
 	       "                   (remote locks that are locally mastered)\n");
+	printf("  -s               Summary following lockdebug output\n");
+	printf("                   (experimental, format not fixed)\n");
 	printf("  -v               Verbose lockdebug output\n");
 	printf("  -w               Wide lockdebug output\n");
 	printf("  -h               Print this help, then exit\n");
@@ -100,7 +139,7 @@ static void print_usage(void)
 	printf("\n");
 }
 
-#define OPTION_STRING "MhVnd:m:e:f:vw"
+#define OPTION_STRING "MhVnd:m:e:f:vws"
 
 static void decode_arguments(int argc, char **argv)
 {
@@ -137,6 +176,10 @@ static void decode_arguments(int argc, char **argv)
 
 		case 'n':
 			ls_all_nodes = 1;
+			break;
+
+		case 's':
+			summarize = 1;
 			break;
 
 		case 'v':
@@ -381,7 +424,7 @@ char *pr_recovery(uint32_t flags, int root_list, int recover_list,
 	return buf;
 }
 
-void print_rsb(char *line)
+void print_rsb(char *line, struct rinfo *ri)
 {
 	char type[4], namefmt[4], *p;
 	char addr[64];
@@ -404,7 +447,9 @@ void print_rsb(char *line)
 		goto fail;
 
 	/* used for lkb prints */
-	rsb_nodeid = nodeid;
+	ri->nodeid = nodeid;
+
+	ri->namelen = namelen;
 	
 	p = strchr(line, '\n');
 	if (!p)
@@ -428,7 +473,6 @@ void print_rsb(char *line)
 	printf("%-16s %s\n",
 		pr_master(nodeid, first_lkid),
 		pr_recovery(flags, root_list, recover_list, recover_locks_count));
-
 	return;
 
  fail:
@@ -499,7 +543,7 @@ char *pr_rqmode(struct lkb *lkb)
 	}
 }
 
-char *pr_remote(struct lkb *lkb)
+char *pr_remote(struct lkb *lkb, struct rinfo *ri)
 {
 	static char buf[64];
 
@@ -507,7 +551,7 @@ char *pr_remote(struct lkb *lkb)
 
 	if (!lkb->nodeid) {
 		return "                    ";
-	} else if (lkb->nodeid != rsb_nodeid) {
+	} else if (lkb->nodeid != ri->nodeid) {
 		sprintf(buf, "Remote: %3d %08x", lkb->nodeid, lkb->remid);
 		return buf;
 	} else {
@@ -544,7 +588,7 @@ char *pr_verbose(struct lkb *lkb)
 	return buf;
 }
 
-void print_lkb(char *line)
+void print_lkb(char *line, struct rinfo *ri)
 {
 	struct lkb lkb;
 	char type[4];
@@ -569,36 +613,122 @@ void print_lkb(char *line)
 		    &lkb.timestamp,
 		    &lkb.time_bast);
 
-	if ((lkb.status == DLM_LKSTS_GRANTED) && !print_granted) {
-		printf("Granted\n");
-		print_granted = 1;
+	ri->lkb_count++;
+
+	if (lkb.status == DLM_LKSTS_GRANTED) {
+	       	if (!ri->print_granted++)
+			printf("Granted\n");
+		ri->lkb_granted++;
 	}
-	if ((lkb.status == DLM_LKSTS_CONVERT) && !print_convert) {
-		printf("Convert\n");
-		print_convert = 1;
+	if (lkb.status == DLM_LKSTS_CONVERT) {
+		if (!ri->print_convert++)
+			printf("Convert\n");
+		ri->lkb_convert++;
 	}
-	if ((lkb.status == DLM_LKSTS_WAITING) && !print_waiting) {
-		printf("Waiting\n");
-		print_waiting = 1;
+	if (lkb.status == DLM_LKSTS_WAITING) {
+	       	if (!ri->print_waiting++)
+			printf("Waiting\n");
+		ri->lkb_waiting++;
 	}
-	if (lkb.rsb_lookup && !print_lookup) {
-		printf("Lookup\n");
-		print_lookup = 1;
+	if (lkb.rsb_lookup) {
+	       	if (!ri->print_lookup++)
+			printf("Lookup\n");
+		ri->lkb_lookup++;
+	}
+
+	if (lkb.wait_type)
+		ri->lkb_wait_msg++;
+
+	if (!ri->nodeid) {
+		if (lkb.nodeid)
+			ri->lkb_master_copy++;
+		else
+			ri->lkb_local_copy++;
+	} else {
+		ri->lkb_process_copy++;
 	}
 
 	printf("%08x %s %s %s %s %s\n",
 	       lkb.id, pr_grmode(&lkb), pr_rqmode(&lkb),
-	       pr_remote(&lkb), pr_wait(&lkb),
+	       pr_remote(&lkb, ri), pr_wait(&lkb),
 	       (verbose && wide) ? pr_verbose(&lkb) : "");
 
 	if (verbose && !wide)
 		printf("%s\n", pr_verbose(&lkb));
 }
 
+static void clear_rinfo(struct rinfo *ri)
+{
+	memset(ri, 0, sizeof(struct rinfo));
+	ri->nodeid = -9;
+}
+
+static void count_rinfo(struct summary *s, struct rinfo *ri)
+{
+	/* the first time called */
+	if (!ri->namelen)
+		return;
+
+	s->rsb_total++;
+
+	if (ri->lvb)
+		s->rsb_with_lvb++;
+
+	if (!ri->lkb_count) {
+		s->rsb_no_locks++;
+		printf("no locks\n");
+	}
+
+	if (!ri->nodeid)
+		s->rsb_master++;
+	else if (ri->nodeid == -1)
+		s->rsb_lookup++;
+	else if (ri->nodeid > 0)
+		s->rsb_local++;
+	else
+		s->rsb_nodeid_error++;
+
+	s->lkb_count        += ri->lkb_count;
+	s->lkb_granted      += ri->lkb_granted;
+	s->lkb_convert      += ri->lkb_convert;
+	s->lkb_waiting      += ri->lkb_waiting;
+	s->lkb_lookup       += ri->lkb_lookup;
+	s->lkb_wait_msg     += ri->lkb_wait_msg;
+	s->lkb_master_copy  += ri->lkb_master_copy;
+	s->lkb_local_copy   += ri->lkb_local_copy;
+	s->lkb_process_copy += ri->lkb_process_copy;
+}
+
+static void print_summary(struct summary *s)
+{
+	printf("rsb\n");
+	printf("  total         %u\n", s->rsb_total);
+	printf("  master        %u\n", s->rsb_master);
+	printf("  remote master %u\n", s->rsb_local);
+	printf("  lookup master %u\n", s->rsb_lookup);
+	printf("  with lvb      %u\n", s->rsb_with_lvb);
+	printf("  with no locks %u\n", s->rsb_no_locks);
+	printf("  nodeid error  %u\n", s->rsb_nodeid_error);
+	printf("\n");
+
+	printf("lkb\n");
+	printf("  total         %u\n", s->lkb_count);
+	printf("  granted       %u\n", s->lkb_granted);
+	printf("  convert       %u\n", s->lkb_convert);
+	printf("  waiting       %u\n", s->lkb_waiting);
+	printf("  local copy    %u\n", s->lkb_local_copy);
+	printf("  master copy   %u\n", s->lkb_master_copy);
+	printf("  process copy  %u\n", s->lkb_process_copy);
+	printf("  rsb lookup    %u\n", s->lkb_lookup);
+	printf("  wait message  %u\n", s->lkb_wait_msg);
+}
+
 #define LOCK_LINE_MAX 1024
 
 void do_lockdebug(char *name)
 {
+	struct summary summary;
+	struct rinfo info;
 	FILE *file;
 	char path[PATH_MAX];
 	char line[LOCK_LINE_MAX];
@@ -617,6 +747,9 @@ void do_lockdebug(char *name)
 		old = 1;
 	}
 
+	memset(&summary, 0, sizeof(struct summary));
+	memset(&info, 0, sizeof(struct rinfo));
+
 	while (fgets(line, LOCK_LINE_MAX, file)) {
 
 		if (old)
@@ -626,26 +759,32 @@ void do_lockdebug(char *name)
 			continue;
 
 		if (!strncmp(line, "rsb", 3)) {
-			rsb_nodeid = -9;
-			print_granted = print_convert = print_waiting = print_lookup = 0;
+			count_rinfo(&summary, &info);
+			clear_rinfo(&info);
 			printf("\n");
-			print_rsb(line);
+			print_rsb(line, &info);
 			continue;
 		}
 		
 		if (!strncmp(line, "lvb", 3)) {
 			print_lvb(line);
+			info.lvb = 1;
 			continue;
 		}
 		
 		if (!strncmp(line, "lkb", 3)) {
-			print_lkb(line);
+			print_lkb(line, &info);
 			continue;
 		}
  raw:
 		printf("%s", line);
 	}
 	fclose(file);
+
+	if (summarize) {
+		printf("\n");
+		print_summary(&summary);
+	}
 }
 
 void parse_r_name(char *line, char *name)
