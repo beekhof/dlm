@@ -21,8 +21,7 @@ OBJS=	action.o \
 	deadlock.o \
 	main.o \
 	netlink.o \
-	plock.o \
-	group.o
+	plock.o
 
 ifdef enable_pacemaker
 OBJS +=	pacemaker.o
@@ -35,7 +34,7 @@ endif
 CFLAGS += -I${ccsincdir} -I${cmanincdir} -I${logtincdir} 
 CFLAGS += -I${dlmincdir} -I${dlmcontrolincdir}
 CFLAGS += -I${corosyncincdir} -I${openaisincdir}
-CFLAGS += -I${groupincdir} -I${fencedincdir}
+CFLAGS += -I${fencedincdir}
 CFLAGS += -I${KERNEL_SRC}/include/
 CFLAGS += -I$(S)/../include/
 ifdef enable_pacemaker
@@ -49,10 +48,7 @@ LDFLAGS += -L${dlmlibdir} -ldlm
 LDFLAGS += -L${logtlibdir} -llogthread
 LDFLAGS += -L${openaislibdir} -lSaCkpt
 LDFLAGS += -L${corosynclibdir} -lcpg 
-LDFLAGS += -L${grouplibdir} -lgroup
 LDFLAGS += -L${libdir}
-
-LDDEPS += ${grouplibdir}/libgroup.a
 
 PCMK_LDFLAGS += -lcib -lcrmcommon -lcrmcluster -ltotem_pg
 PCMK_LDFLAGS += `pkg-config glib-2.0 --libs`

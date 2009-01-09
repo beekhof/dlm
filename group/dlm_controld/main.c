@@ -289,8 +289,7 @@ char *dlm_mode_str(int mode)
 	return "??";
 }
 
-/* recv "online" (join) and "offline" (leave) 
-   messages from dlm via uevents and pass them on to groupd */
+/* recv "online" (join) and "offline" (leave) messages from dlm via uevents */
 
 static void process_uevent(int ci)
 {
@@ -346,10 +345,7 @@ static void process_uevent(int ci)
 		if (fs_register_check(ls->name))
 			ls->fs_registered = 1;
 
-		if (group_mode == GROUP_LIBGROUP)
-			rv = dlm_join_lockspace_group(ls);
-		else
-			rv = dlm_join_lockspace(ls);
+		rv = dlm_join_lockspace(ls);
 		if (rv) {
 			/* ls already freed */
 			goto out;
@@ -362,10 +358,7 @@ static void process_uevent(int ci)
 			goto out;
 		}
 
-		if (group_mode == GROUP_LIBGROUP)
-			dlm_leave_lockspace_group(ls);
-		else
-			dlm_leave_lockspace(ls);
+		dlm_leave_lockspace(ls);
 	}
  out:
 	if (rv < 0)
@@ -507,12 +500,8 @@ static void query_lockspace_info(int fd, char *name)
 	}
 
 	memset(&lockspace, 0, sizeof(lockspace));
-	lockspace.group_mode = group_mode;
 
-	if (group_mode == GROUP_LIBGROUP)
-		rv = set_lockspace_info_group(ls, &lockspace);
-	else
-		rv = set_lockspace_info(ls, &lockspace);
+	rv = set_lockspace_info(ls, &lockspace);
  out:
 	do_reply(fd, DLMC_CMD_LOCKSPACE_INFO, name, rv, 0,
 		 (char *)&lockspace, sizeof(lockspace));
@@ -532,10 +521,7 @@ static void query_node_info(int fd, char *name, int nodeid)
 
 	memset(&node, 0, sizeof(node));
 
-	if (group_mode == GROUP_LIBGROUP)
-		rv = set_node_info_group(ls, nodeid, &node);
-	else
-		rv = set_node_info(ls, nodeid, &node);
+	rv = set_node_info(ls, nodeid, &node);
  out:
 	do_reply(fd, DLMC_CMD_NODE_INFO, name, rv, 0,
 		 (char *)&node, sizeof(node));
@@ -547,11 +533,7 @@ static void query_lockspaces(int fd, int max)
 	struct dlmc_lockspace *lss = NULL;
 	int rv, result;
 
-	if (group_mode == GROUP_LIBGROUP)
-		rv = set_lockspaces_group(&ls_count, &lss);
-	else
-		rv = set_lockspaces(&ls_count, &lss);
-
+	rv = set_lockspaces(&ls_count, &lss);
 	if (rv < 0) {
 		result = rv;
 		ls_count = 0;
@@ -586,11 +568,7 @@ static void query_lockspace_nodes(int fd, char *name, int option, int max)
 		goto out;
 	}
 
-	if (group_mode == GROUP_LIBGROUP)
-		rv = set_lockspace_nodes_group(ls, option, &node_count, &nodes);
-	else
-		rv = set_lockspace_nodes(ls, option, &node_count, &nodes);
-
+	rv = set_lockspace_nodes(ls, option, &node_count, &nodes);
 	if (rv < 0) {
 		result = rv;
 		node_count = 0;
@@ -656,21 +634,15 @@ static void process_connection(int ci)
 
 	switch (h.command) {
 	case DLMC_CMD_FS_REGISTER:
-		if (group_mode == GROUP_LIBGROUP) {
-			rv = -EINVAL;
-		} else {
-			rv = fs_register_add(h.name);
-			ls = find_ls(h.name);
-			if (ls)
-				ls->fs_registered = 1;
-		}
+		rv = fs_register_add(h.name);
+		ls = find_ls(h.name);
+		if (ls)
+			ls->fs_registered = 1;
 		do_reply(client[ci].fd, DLMC_CMD_FS_REGISTER, h.name, rv, 0,
 			 NULL, 0);
 		break;
 
 	case DLMC_CMD_FS_UNREGISTER:
-		if (group_mode == GROUP_LIBGROUP)
-			break;
 		fs_register_del(h.name);
 		ls = find_ls(h.name);
 		if (ls)
@@ -911,57 +883,29 @@ static void loop(void)
 		goto out;
 	client_add(rv, process_uevent, NULL);
 
-	group_mode = GROUP_LIBCPG;
+	rv = setup_cpg();
+	if (rv < 0)
+		goto out;
+	client_add(rv, process_cpg, cluster_dead);
 
-	if (cfgd_groupd_compat) {
-		rv = setup_groupd();
+	rv = set_protocol();
+	if (rv < 0)
+		goto out;
+
+	if (cfgd_enable_deadlk) {
+		rv = setup_netlink();
 		if (rv < 0)
 			goto out;
-		client_add(rv, process_groupd, cluster_dead);
+		client_add(rv, process_netlink, NULL);
 
-		switch (cfgd_groupd_compat) {
-		case 1:
-			group_mode = GROUP_LIBGROUP;
-			rv = 0;
-			break;
-		case 2:
-			rv = set_group_mode();
-			break;
-		default:
-			log_error("inval groupd_compat %d", cfgd_groupd_compat);
-			rv = -1;
-			break;
-		}
-		if (rv < 0) 
-			goto out;
+		setup_deadlock();
 	}
-	log_debug("group_mode %d compat %d", group_mode, cfgd_groupd_compat);
 
-	if (group_mode == GROUP_LIBCPG) {
-		rv = setup_cpg();
-		if (rv < 0)
-			goto out;
-		client_add(rv, process_cpg, cluster_dead);
-
-		rv = set_protocol();
-		if (rv < 0)
-			goto out;
-
-		if (cfgd_enable_deadlk) {
-			rv = setup_netlink();
-			if (rv < 0)
-				goto out;
-			client_add(rv, process_netlink, NULL);
-
-			setup_deadlock();
-		}
-
-		rv = setup_plocks();
-		if (rv < 0)
-			goto out;
-		plock_fd = rv;
-		plock_ci = client_add(rv, process_plocks, NULL);
-	}
+	rv = setup_plocks();
+	if (rv < 0)
+		goto out;
+	plock_fd = rv;
+	plock_ci = client_add(rv, process_plocks, NULL);
 
 	for (;;) {
 		rv = poll(pollfd, client_maxi + 1, poll_timeout);
@@ -1014,10 +958,7 @@ static void loop(void)
 		query_unlock();
 	}
  out:
-	if (cfgd_groupd_compat)
-		close_groupd();
-	if (group_mode == GROUP_LIBCPG)
-		close_cpg();
+	close_cpg();
 	clear_configfs();
 	close_logging();
 	close_ccs();
@@ -1080,12 +1021,6 @@ static void print_usage(void)
 	printf("  -D		Enable debugging to stderr and don't fork\n");
 	printf("  -L		Enable debugging to log file\n");
 	printf("  -K		Enable kernel dlm debugging messages\n");
-	printf("  -g <num>	groupd compatibility mode, 0 off, 1 on, 2 detect\n");
-	printf("		0: use libcpg, no backward compat, best performance\n");
-	printf("		1: use libgroup for compat with cluster2/rhel5\n");
-	printf("		2: use groupd to detect old, or mode 1, nodes that\n"
-	       "		require compat, use libcpg if none found\n");
-	printf("		Default is %d\n", DEFAULT_GROUPD_COMPAT);
 	printf("  -f <num>	Enable (1) or disable (0) fencing recovery dependency\n");
 	printf("		Default is %d\n", DEFAULT_ENABLE_FENCING);
 	printf("  -q <num>	Enable (1) or disable (0) quorum recovery dependency\n");
@@ -1109,7 +1044,7 @@ static void print_usage(void)
 	printf("  -V		Print program version information, then exit\n");
 }
 
-#define OPTION_STRING "LDKg:f:q:d:p:Pl:o:t:c:a:hV"
+#define OPTION_STRING "LDKf:q:d:p:Pl:o:t:c:a:hV"
 
 static void read_arguments(int argc, char **argv)
 {
@@ -1132,11 +1067,6 @@ static void read_arguments(int argc, char **argv)
 		case 'L':
 			optd_debug_logfile = 1;
 			cfgd_debug_logfile = 1;
-			break;
-
-		case 'g':
-			optd_groupd_compat = 1;
-			cfgd_groupd_compat = atoi(optarg);
 			break;
 
 		case 'K':
@@ -1318,7 +1248,6 @@ int dump_point;
 int dump_wrap;
 char plock_dump_buf[DLMC_DUMP_SIZE];
 int plock_dump_len;
-int group_mode;
 uint32_t control_minor;
 uint32_t monitor_minor;
 uint32_t plock_minor;
@@ -1330,7 +1259,6 @@ uint32_t old_plock_minor;
 int optk_debug;
 int optk_timewarn;
 int optk_protocol;
-int optd_groupd_compat;
 int optd_debug_logfile;
 int optd_enable_fencing;
 int optd_enable_quorum;
@@ -1349,7 +1277,6 @@ int optd_drop_resources_age;
 int cfgk_debug                  = -1;
 int cfgk_timewarn               = -1;
 int cfgk_protocol               = -1;
-int cfgd_groupd_compat          = DEFAULT_GROUPD_COMPAT;
 int cfgd_debug_logfile		= DEFAULT_DEBUG_LOGFILE;
 int cfgd_enable_fencing         = DEFAULT_ENABLE_FENCING;
 int cfgd_enable_quorum          = DEFAULT_ENABLE_QUORUM;

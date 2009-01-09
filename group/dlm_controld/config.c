@@ -212,7 +212,6 @@ static void read_ccs_protocol(char *path, int *config_val)
 #define DEBUG_PATH "/cluster/dlm/@log_debug"
 #define TIMEWARN_PATH "/cluster/dlm/@timewarn"
 #define PROTOCOL_PATH "/cluster/dlm/@protocol"
-#define GROUPD_COMPAT_PATH "/cluster/group/@groupd_compat"
 #define ENABLE_FENCING_PATH "/cluster/dlm/@enable_fencing"
 #define ENABLE_QUORUM_PATH "/cluster/dlm/@enable_quorum"
 #define ENABLE_DEADLK_PATH "/cluster/dlm/@enable_deadlk"
@@ -254,8 +253,6 @@ int setup_ccs(void)
 		read_ccs_int(TIMEWARN_PATH, &cfgk_timewarn);
 	if (!optk_protocol)
 		read_ccs_protocol(PROTOCOL_PATH, &cfgk_protocol);
-	if (!optd_groupd_compat)
-		read_ccs_int(GROUPD_COMPAT_PATH, &cfgd_groupd_compat);
 	if (!optd_enable_fencing)
 		read_ccs_int(ENABLE_FENCING_PATH, &cfgd_enable_fencing);
 	if (!optd_enable_quorum)

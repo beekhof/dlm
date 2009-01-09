@@ -61,11 +61,6 @@
 
 #define MAXLINE		256
 
-/* group_mode */
-
-#define GROUP_LIBGROUP	2
-#define GROUP_LIBCPG	3
-
 extern int daemon_debug_opt;
 extern int daemon_quit;
 extern int cluster_down;
@@ -84,7 +79,6 @@ extern int dump_point;
 extern int dump_wrap;
 extern char plock_dump_buf[DLMC_DUMP_SIZE];
 extern int plock_dump_len;
-extern int group_mode;
 extern uint32_t control_minor;
 extern uint32_t monitor_minor;
 extern uint32_t plock_minor;
@@ -187,11 +181,6 @@ struct lockspace {
 	time_t			last_plock_time;
 	struct timeval		drop_resources_last;
 	uint64_t		plock_ckpt_handle;
-
-	/* save copy of groupd member callback data for queries */
-
-	int			cb_member_count;
-	int			cb_members[MAX_NODES];
 
 	/* deadlock stuff */
 
@@ -304,40 +293,6 @@ void store_plocks(struct lockspace *ls);
 void retrieve_plocks(struct lockspace *ls);
 void purge_plocks(struct lockspace *ls, int nodeid, int unmount);
 int fill_plock_dump_buf(struct lockspace *ls);
-
-/* group.c */
-#define BUILD_GROUPD_COMPAT
-#ifdef BUILD_GROUPD_COMPAT
-int setup_groupd(void);
-void close_groupd(void);
-void process_groupd(int ci);
-int dlm_join_lockspace_group(struct lockspace *ls);
-int dlm_leave_lockspace_group(struct lockspace *ls);
-int set_node_info_group(struct lockspace *ls, int nodeid,
-	struct dlmc_node *node);
-int set_lockspace_info_group(struct lockspace *ls,
-	struct dlmc_lockspace *lockspace);
-int set_lockspaces_group(int *count,
-	struct dlmc_lockspace **lss_out);
-int set_lockspace_nodes_group(struct lockspace *ls, int option,
-	int *node_count, struct dlmc_node **nodes);
-int set_group_mode(void);
-#else
-static inline int setup_groupd(void) { return -1; }
-static inline void close_groupd(void) { }
-static inline void process_groupd(int ci) { }
-static inline int dlm_join_lockspace_group(struct lockspace *ls) { return -1; }
-static inline int dlm_leave_lockspace_group(struct lockspace *ls) { return -1; }
-static inline int set_node_info_group(struct lockspace *ls, int nodeid,
-	struct dlmc_node *node) { return -1; }
-static inline int set_lockspace_info_group(struct lockspace *ls,
-	struct dlmc_lockspace *lockspace) { return -1; }
-static inline int set_lockspaces_group(int *count,
-	struct dlmc_lockspace **lss_out) { return -1; }
-static inline int set_lockspace_nodes_group(struct lockspace *ls, int option,
-	int *node_count, struct dlmc_node **nodes) { return -1; }
-int inline void set_group_mode(void) { return 0; }
-#endif
 
 /* logging.c */
 
