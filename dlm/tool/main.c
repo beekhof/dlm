@@ -123,9 +123,7 @@ static void print_usage(void)
 	printf("Options:\n");
 	printf("  -n               Show all node information in ls\n");
 	printf("  -d <n>           Resource directory off/on (0/1) in join, default 0\n");
-#ifdef LINUX2628rc
 	printf("  -e <n>           Exclusive create off/on (0/1) in join, default 0\n");
-#endif
 	printf("  -f <n>           FS memory allocation off/on (0/1) in join, default 0\n");
 	printf("  -m <mode>        Permission mode for lockspace device (octal), default 0600\n");
 	printf("  -M               Print MSTCPY locks in lockdump\n"
@@ -333,10 +331,8 @@ static char *flag_str(uint32_t flags)
 	if (flags & DLM_LSFL_NODIR)
 		strcat(join_flags, "NODIR ");
 
-#ifdef LINUX2628rc
 	if (flags & DLM_LSFL_NEWEXCL)
 		strcat(join_flags, "NEWEXCL ");
-#endif
 
 	if (flags & DLM_LSFL_FS)
 		strcat(join_flags, "FS ");
@@ -352,10 +348,8 @@ void do_join(char *name)
 	if (!opt_dir)
 		flags |= DLM_LSFL_NODIR;
 
-#ifdef LINUX2628rc
 	if (opt_excl)
 		flags |= DLM_LSFL_NEWEXCL;
-#endif
 
 	if (opt_fs)
 		flags |= DLM_LSFL_FS;
