@@ -462,6 +462,7 @@ while (<IFILE>) {
   $_ =~ s/\@OPENAISLIBDIR\@/$openaislibdir/;
   $_ =~ s/\@MANDIR\@/$mandir/;
   $_ =~ s/\@SBINDIR\@/$sbindir/;
+  $_ =~ s/\@PREFIX\@/$prefix/;
   $_ =~ s/\@DOCDIR\@/$docdir/;
   $_ =~ s/\@LOGDIR\@/$logdir/;
   $_ =~ s/\@SYSLOGFACILITY\@/$syslogfacility/;
