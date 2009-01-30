@@ -12,3 +12,4 @@ make/defines.mk
 Module.symvers
 modules.order
 *.mod.c
+*.pc
