@@ -14,12 +14,14 @@ INCDIRT=$(TARGET).h
 
 UDEVT=51-dlm.rules
 
+PKGCONF=$(TARGET).pc $(TARGET)_lt.pc
+
 include ../../make/defines.mk
 
 SHAREDLIB=$(TARGET).so.${SOMAJOR}.${SOMINOR} $(TARGET)_lt.so.${SOMAJOR}.${SOMINOR}
 STATICLIB=$(TARGET).a $(TARGET)_lt.a
 
-all: $(STATICLIB) $(SHAREDLIB)
+all: $(STATICLIB) $(SHAREDLIB) $(PKGCONF)
 
 include $(OBJDIR)/make/cobj.mk
 include $(OBJDIR)/make/clean.mk
@@ -54,6 +56,24 @@ $(TARGET)_lt.so.${SOMAJOR}.${SOMINOR}: $(TARGET)_lt.o
 	$(CC) -shared -o $@ -Wl,-soname=$(TARGET)_lt.so.$(SOMAJOR) $< $(LDFLAGS)
 	ln -sf $(TARGET)_lt.so.$(SOMAJOR).$(SOMINOR) $(TARGET)_lt.so
 	ln -sf $(TARGET)_lt.so.$(SOMAJOR).$(SOMINOR) $(TARGET)_lt.so.$(SOMAJOR)
+
+$(TARGET).pc: $(S)/$(TARGET).pc.in
+	cat $(S)/$(TARGET).pc.in | \
+	sed \
+		-e 's#@PREFIX@#${prefix}#g' \
+		-e 's#@LIBDIR@#${libdir}#g' \
+		-e 's#@INCDIR@#${incdir}#g' \
+		-e 's#@VERSION@#${RELEASE_VERSION}#g' \
+	> $@
+
+$(TARGET)_lt.pc: $(S)/$(TARGET)_lt.pc.in
+	cat $(S)/$(TARGET)_lt.pc.in | \
+	sed \
+		-e 's#@PREFIX@#${prefix}#g' \
+		-e 's#@LIBDIR@#${libdir}#g' \
+		-e 's#@INCDIR@#${incdir}#g' \
+		-e 's#@VERSION@#${RELEASE_VERSION}#g' \
+	> $@
 
 clean: generalclean
 

@@ -1,0 +1,11 @@
+prefix=@PREFIX@
+exec_prefix=${prefix}
+libdir=@LIBDIR@
+includedir=@INCDIR@
+
+Name: libdlm
+Version: @VERSION@
+Description: Cluster Distributed Lock Manager library
+Requires:
+Libs: -L${libdir} -ldlm
+Cflags: -I${includedir}
