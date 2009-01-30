@@ -1,0 +1,11 @@
+prefix=@PREFIX@
+exec_prefix=${prefix}
+libdir=@LIBDIR@
+includedir=@INCDIR@
+
+Name: libaislock
+Version: @VERSION@
+Description: libaislock
+Requires:
+Libs: -L${libdir} -laislock
+Cflags: -I${includedir}
