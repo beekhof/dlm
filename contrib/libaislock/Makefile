@@ -8,6 +8,8 @@ include $(OBJDIR)/make/install.mk
 include $(OBJDIR)/make/uninstall.mk
 
 CFLAGS += -fPIC
+CFLAGS += -I${dlmincdir}
 CFLAGS += -I${incdir}
 
+LDFLAGS += -L${dlmlibdir} -ldlm
 LDFLAGS += -lpthread
