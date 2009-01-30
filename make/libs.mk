@@ -24,13 +24,23 @@ ifndef MAKESTATICLIB
 	ifndef SHAREDLIB
 		SHAREDLIB=$(TARGET).so.${SOMAJOR}.${SOMINOR}
 	endif
+	ifndef PKGCONF
+		PKGCONF=$(TARGET).pc
+	endif
 
-all: $(STATICLIB) $(SHAREDLIB)
+all: $(STATICLIB) $(SHAREDLIB) $(PKGCONF)
 
 $(SHAREDLIB): $(OBJS)
 	$(CC) -shared -o $@ -Wl,-soname=$(TARGET).so.$(SOMAJOR) $^ $(LDFLAGS)
 	ln -sf $(TARGET).so.$(SOMAJOR).$(SOMINOR) $(TARGET).so
 	ln -sf $(TARGET).so.$(SOMAJOR).$(SOMINOR) $(TARGET).so.$(SOMAJOR)
+
+$(PKGCONF): $(S)/$(PKGCONF).in
+	cat $(S)/$(PKGCONF).in | \
+	sed \
+		-e 's#@PREFIX@#${prefix}#g' \
+		-e 's#@VERSION@#${RELEASE_VERSION}#g' \
+	> $@
 
 else
 
