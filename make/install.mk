@@ -31,3 +31,7 @@ ifdef DOCS
 		install -m644 $(S)/$$i ${docdir}; \
 	done
 endif
+ifdef PKGCONF
+	install -d ${pkgconfigdir}
+	install -m644 ${PKGCONF} ${pkgconfigdir}
+endif

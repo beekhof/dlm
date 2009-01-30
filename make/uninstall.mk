@@ -20,3 +20,6 @@ endif
 ifdef DOCS
 	${UNINSTALL} ${DOCS} ${docdir}
 endif
+ifdef PKGCONF
+	${UNINSTALL} ${PKGCONF} ${pkgconfigdir}
+endif
