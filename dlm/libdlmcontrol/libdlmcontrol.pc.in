@@ -1,0 +1,11 @@
+prefix=@PREFIX@
+exec_prefix=${prefix}
+libdir=@LIBDIR@
+includedir=@INCDIR@
+
+Name: libdlmcontrol
+Version: @VERSION@
+Description: DLM control library
+Requires:
+Libs: -L${libdir} -ldlmcontrol
+Cflags: -I${includedir}
