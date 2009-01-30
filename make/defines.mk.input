@@ -6,6 +6,7 @@ docdir ?= ${DESTDIR}@DOCDIR@
 logdir ?= ${DESTDIR}@LOGDIR@
 mandir ?= ${DESTDIR}@MANDIR@
 incdir ?= ${DESTDIR}@INCDIR@
+pkgconfigdir ?= ${DESTDIR}@LIBDIR@/pkgconfig
 
 # Build information
 
