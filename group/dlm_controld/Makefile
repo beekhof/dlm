@@ -31,7 +31,7 @@ OBJS +=	config.o \
 	logging.o
 endif
 
-CFLAGS += -I${ccsincdir} -I${cmanincdir} -I${logtincdir} 
+CFLAGS += -I${ccsincdir} -I${logtincdir} 
 CFLAGS += -I${dlmincdir} -I${dlmcontrolincdir}
 CFLAGS += -I${corosyncincdir} -I${openaisincdir}
 CFLAGS += -I${fencedincdir}
@@ -47,14 +47,14 @@ CFLAGS += -I${incdir}
 LDFLAGS += -L${dlmlibdir} -ldlm 
 LDFLAGS += -L${logtlibdir} -llogthread
 LDFLAGS += -L${openaislibdir} -lSaCkpt
-LDFLAGS += -L${corosynclibdir} -lcpg 
+LDFLAGS += -L${corosynclibdir} -lcpg -lcfg -lvotequorum
 LDFLAGS += -L${libdir}
 
 PCMK_LDFLAGS += -lcib -lcrmcommon -lcrmcluster -ltotem_pg
 PCMK_LDFLAGS += `pkg-config glib-2.0 --libs`
 PCMK_LDFLAGS += `xml2-config --libs`
 
-CMAN_LDFLAGS += -L${ccslibdir} -L${cmanlibdir} -lccs -lcman
+CMAN_LDFLAGS += -L${ccslibdir} -lccs
 CMAN_LDFLAGS += -L${fencedlibdir} -lfenced
 CMAN_LDDEPS += ${fencedlibdir}/libfenced.a
 

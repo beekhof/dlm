@@ -853,6 +853,11 @@ static void loop(void)
 		goto out;
 	client_add(rv, process_listener, NULL);
 
+	rv = setup_cluster_cfg();
+	if (rv < 0)
+		goto out;
+	client_add(rv, process_cluster_cfg, cluster_dead);
+
 	rv = setup_cluster();
 	if (rv < 0)
 		goto out;
@@ -963,6 +968,7 @@ static void loop(void)
 	close_logging();
 	close_ccs();
 	close_cluster();
+	close_cluster_cfg();
 
 	if (!list_empty(&lockspaces))
 		log_error("lockspaces abandoned");

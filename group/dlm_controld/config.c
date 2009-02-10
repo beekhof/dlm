@@ -101,23 +101,65 @@ static int get_weight_clusternode(char *node, char *lockspace)
 	return weight;
 }
 
+static int nodeid2name(int nodeid, char *name_out)
+{
+	char path[PATH_MAX];
+	char *str, *name;
+	int i, error;
+
+	for (i = 1; ; i++) {
+		str = NULL;
+		memset(path, 0, sizeof(path));
+		sprintf(path, "/cluster/clusternodes/clusternode[%d]/@nodeid", i);
+
+		error = ccs_get(ccs_handle, path, &str);
+		if (error || !str)
+			break;
+
+		if (atoi(str) != nodeid) {
+			free(str);
+			continue;
+		}
+		free(str);
+
+		name = NULL;
+		memset(path, 0, sizeof(path));
+		sprintf(path, "/cluster/clusternodes/clusternode[%d]/@name", i);
+
+		error = ccs_get(ccs_handle, path, &name);
+		if (error || !name) {
+			log_error("node name query failed for num %d nodeid %d",
+				  i, nodeid);
+			break;
+		}
+
+		strncpy(name_out, name, PATH_MAX);
+		free(name);
+		return 0;
+	}
+
+	return -1;
+}
+
 int get_weight(int nodeid, char *lockspace)
 {
-	char *node;
-	int w;
+	char nodename[PATH_MAX];
+	int w, rv;
 
-	node = nodeid2name(nodeid);
-	if (!node) {
+	memset(nodename, 0, sizeof(nodename));
+
+	rv = nodeid2name(nodeid, nodename);
+	if (rv < 0) {
 		log_error("no name for nodeid %d", nodeid);
 		w = 1;
 		goto out;
 	}
 
-	w = get_weight_lockspace(node, lockspace);
+	w = get_weight_lockspace(nodename, lockspace);
 	if (w >= 0)
 		goto out;
 
-	w = get_weight_clusternode(node, lockspace);
+	w = get_weight_clusternode(nodename, lockspace);
 	if (w >= 0)
 		goto out;
 
