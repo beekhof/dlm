@@ -269,7 +269,7 @@ int setup_cluster(void);
 void close_cluster(void);
 void process_cluster(int ci);
 void update_cluster(void);
-int is_cluster_member(int nodeid);
+int is_cluster_member(uint32_t nodeid);
 int setup_cluster_cfg(void);
 void close_cluster_cfg(void);
 void process_cluster_cfg(int ci);

@@ -2,14 +2,14 @@
 #include "config.h"
 #include <corosync/corotypes.h>
 #include <corosync/cfg.h>
-#include <corosync/votequorum.h>
+#include <corosync/quorum.h>
 #include "libfenced.h"
 
 static corosync_cfg_handle_t	ch;
-static votequorum_handle_t	qh;
-static votequorum_node_t	old_nodes[MAX_NODES];
+static quorum_handle_t		qh;
+static uint32_t			old_nodes[MAX_NODES];
 static int			old_node_count;
-static votequorum_node_t	quorum_nodes[MAX_NODES];
+static uint32_t			quorum_nodes[MAX_NODES];
 static int			quorum_node_count;
 
 void kick_node_from_cluster(int nodeid)
@@ -25,23 +25,23 @@ void kick_node_from_cluster(int nodeid)
 	}
 }
 
-static int is_member(votequorum_node_t *node_list, int count, int nodeid)
+static int is_member(uint32_t *node_list, int count, uint32_t nodeid)
 {
 	int i;
 
 	for (i = 0; i < count; i++) {
-		if (node_list[i].nodeid == nodeid)
-			return (node_list[i].state == NODESTATE_MEMBER);
+		if (node_list[i] == nodeid)
+			return 1;
 	}
 	return 0;
 }
 
-static int is_old_member(int nodeid)
+static int is_old_member(uint32_t nodeid)
 {
 	return is_member(old_nodes, old_node_count, nodeid);
 }
 
-int is_cluster_member(int nodeid)
+int is_cluster_member(uint32_t nodeid)
 {
 	return is_member(quorum_nodes, quorum_node_count, nodeid);
 }
@@ -60,9 +60,9 @@ static void cman_callback(cman_handle_t h, void *private, int reason, int arg)
 /* add a configfs dir for cluster members that don't have one,
    del the configfs dir for cluster members that are now gone */
 
-static void quorum_callback(votequorum_handle_t h, uint64_t context,
-			    uint32_t quorate, uint32_t node_list_entries,
-			    votequorum_node_t node_list[])
+static void quorum_callback(quorum_handle_t h, uint32_t quorate,
+			    uint64_t ring_seq, uint32_t node_list_entries,
+			    uint32_t *node_list)
 {
 	corosync_cfg_node_address_t addrs[MAX_NODE_ADDRESSES];
 	corosync_cfg_node_address_t *addrptr = addrs;
@@ -77,63 +77,50 @@ static void quorum_callback(votequorum_handle_t h, uint64_t context,
 	quorum_node_count = 0;
 	memset(&quorum_nodes, 0, sizeof(quorum_nodes));
 
-	for (i = 0; i < node_list_entries; i++) {
-		if (node_list[i].state == NODESTATE_MEMBER) {
-			memcpy(&quorum_nodes[quorum_node_count],
-			       &node_list[i], sizeof(votequorum_node_t));
-			quorum_node_count++;
-		}
-	}
+	for (i = 0; i < node_list_entries; i++)
+		quorum_nodes[quorum_node_count++] = node_list[i];
 
 	for (i = 0; i < old_node_count; i++) {
-		if ((old_nodes[i].state == NODESTATE_MEMBER) &&
-		    !is_cluster_member(old_nodes[i].nodeid)) {
-
-			log_debug("quorum: node %d removed",
-				   old_nodes[i].nodeid);
-
-			del_configfs_node(old_nodes[i].nodeid);
+		if (!is_cluster_member(old_nodes[i])) {
+			log_debug("quorum: node %u removed", old_nodes[i]);
+			del_configfs_node(old_nodes[i]);
 		}
 	}
 
 	for (i = 0; i < quorum_node_count; i++) {
-		if ((quorum_nodes[i].state == NODESTATE_MEMBER) &&
-		    !is_old_member(quorum_nodes[i].nodeid)) {
+		if (!is_old_member(quorum_nodes[i])) {
+			log_debug("quorum: node %u added", quorum_nodes[i]);
 
-			log_debug("quorum: node %d added",
-				  quorum_nodes[i].nodeid);
-
-			err = corosync_cfg_get_node_addrs(ch,
-					quorum_nodes[i].nodeid,
-					MAX_NODE_ADDRESSES,
-					&num_addrs, addrs);
+			err = corosync_cfg_get_node_addrs(ch, quorum_nodes[i],
+							  MAX_NODE_ADDRESSES,
+							  &num_addrs, addrs);
 			if (err != CS_OK) {
 				log_error("corosync_cfg_get_node_addrs failed "
-					  "nodeid %d", quorum_nodes[i].nodeid);
+					  "nodeid %u", quorum_nodes[i]);
 				continue;
 			}
 
 			for (j = 0; j < num_addrs; j++) {
-				add_configfs_node(quorum_nodes[i].nodeid,
+				add_configfs_node(quorum_nodes[i],
 						  addrptr[j].address,
 						  addrptr[j].address_length,
-						  (quorum_nodes[i].nodeid ==
+						  (quorum_nodes[i] ==
 						   our_nodeid));
 			}
 		}
 	}
 }
 
-static votequorum_callbacks_t quorum_callbacks =
+static quorum_callbacks_t quorum_callbacks =
 {
-	.votequorum_notify_fn = quorum_callback,
+	.quorum_notify_fn = quorum_callback,
 };
 
 void process_cluster(int ci)
 {
 	cs_error_t err;
 
-	err = votequorum_dispatch(qh, CS_DISPATCH_ALL);
+	err = quorum_dispatch(qh, CS_DISPATCH_ALL);
 	if (err != CS_OK)
 		cluster_dead(0);
 }
@@ -143,33 +130,33 @@ void update_cluster(void)
 {
 	cs_error_t err;
 
-	err = votequorum_dispatch(qh, CS_DISPATCH_ONE);
+	err = quorum_dispatch(qh, CS_DISPATCH_ONE);
 	if (err != CS_OK)
 		cluster_dead(0);
 }
 
 int setup_cluster(void)
 {
-	struct votequorum_info qinfo;
 	cs_error_t err;
 	int fd;
 
-	err = votequorum_initialize(&qh, &quorum_callbacks);
-	if (err != CS_OK)
+	err = quorum_initialize(&qh, &quorum_callbacks);
+	if (err != CS_OK) {
+		log_error("quorum init error %d", err);
 		return -1;
+	}
 
-	err = votequorum_fd_get(qh, &fd);
-	if (err != CS_OK)
+	err = quorum_fd_get(qh, &fd);
+	if (err != CS_OK) {
+		log_error("quorum fd_get error %d", err);
 		goto fail;
+	}
 
-	err = votequorum_getinfo(qh, 0, &qinfo);
-	if (err != CS_OK)
+	err = quorum_trackstart(qh, CS_TRACK_CURRENT);
+	if (err != CS_OK) {
+		log_error("quorum trackstart error %d", err);
 		goto fail;
-	our_nodeid = qinfo.node_id;
-
-	err = votequorum_trackstart(qh, 0, CS_TRACK_CURRENT);
-	if (err != CS_OK)
-		goto fail;
+	}
 
 	old_node_count = 0;
 	memset(&old_nodes, 0, sizeof(old_nodes));
@@ -178,14 +165,14 @@ int setup_cluster(void)
 
 	return fd;
  fail:
-	votequorum_finalize(qh);
+	quorum_finalize(qh);
 	return -1;
 }
 
 void close_cluster(void)
 {
-	votequorum_trackstop(qh);
-	votequorum_finalize(qh);
+	quorum_trackstop(qh);
+	quorum_finalize(qh);
 }
 
 static void shutdown_callback(corosync_cfg_handle_t h,
@@ -221,17 +208,30 @@ void process_cluster_cfg(int ci)
 int setup_cluster_cfg(void)
 {
 	cs_error_t err;
+	unsigned int nodeid;
 	int fd;
 
 	err = corosync_cfg_initialize(&ch, &cfg_callbacks);
-	if (err != CS_OK)
+	if (err != CS_OK) {
+		log_error("corosync cfg init error %d", err);
 		return -1;
+	}
 
 	err = corosync_cfg_fd_get(ch, &fd);
 	if (err != CS_OK) {
+		log_error("corosync cfg fd_get error %d", err);
 		corosync_cfg_finalize(ch);
 		return -1;
 	}
+
+	err = corosync_cfg_local_get(ch, &nodeid);
+	if (err != CS_OK) {
+		log_error("corosync cfg local_get error %d", err);
+		corosync_cfg_finalize(ch);
+		return -1;
+	}
+	our_nodeid = nodeid;
+	log_debug("our_nodeid %d", our_nodeid);
 
 	return fd;
 }

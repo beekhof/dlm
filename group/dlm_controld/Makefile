@@ -47,7 +47,7 @@ CFLAGS += -I${incdir}
 LDFLAGS += -L${dlmlibdir} -ldlm 
 LDFLAGS += -L${logtlibdir} -llogthread
 LDFLAGS += -L${openaislibdir} -lSaCkpt
-LDFLAGS += -L${corosynclibdir} -lcpg -lcfg -lvotequorum
+LDFLAGS += -L${corosynclibdir} -lcpg -lcfg -lquorum
 LDFLAGS += -L${libdir}
 
 PCMK_LDFLAGS += -lcib -lcrmcommon -lcrmcluster -ltotem_pg
