@@ -8,6 +8,7 @@ ifdef LIBSYMT
 endif
 ifdef INCDIRT
 	install -d ${incdir}
+	set -e; \
 	for i in ${INCDIRT}; do \
 		install -m644 $(S)/$$i ${incdir}; \
 	done
@@ -21,12 +22,14 @@ ifdef SBINSYMT
 endif
 ifdef UDEVT
 	install -d ${DESTDIR}/etc/udev/rules.d
+	set -e; \
 	for i in ${UDEVT}; do \
 		install -m644 $(S)/$$i ${DESTDIR}/etc/udev/rules.d; \
 	done
 endif
 ifdef DOCS
 	install -d ${docdir}
+	set -e; \
 	for i in ${DOCS}; do \
 		install -m644 $(S)/$$i ${docdir}; \
 	done
