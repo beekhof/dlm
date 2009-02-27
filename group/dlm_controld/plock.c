@@ -186,6 +186,14 @@ int setup_plocks(void)
 	return plock_device_fd;
 }
 
+void close_plocks(void)
+{
+	if (system_ckpt_handle)
+		saCkptFinalize(system_ckpt_handle);
+	if (plock_device_fd > 0)
+		close(plock_device_fd);
+}
+
 static uint32_t mg_to_ls_id(uint32_t fsid)
 {
 	struct lockspace *ls;

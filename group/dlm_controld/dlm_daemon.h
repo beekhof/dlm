@@ -283,6 +283,7 @@ void process_netlink(int ci);
 
 /* plock.c */
 int setup_plocks(void);
+void close_plocks(void);
 void process_plocks(int ci);
 int limit_plocks(void);
 void receive_plock(struct lockspace *ls, struct dlm_header *hd, int len);

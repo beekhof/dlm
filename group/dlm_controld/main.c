@@ -963,6 +963,7 @@ static void loop(void)
 		query_unlock();
 	}
  out:
+	close_plocks();
 	close_cpg();
 	clear_configfs();
 	close_logging();
