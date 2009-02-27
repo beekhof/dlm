@@ -2051,12 +2051,15 @@ int setup_cpg(void)
 
 void close_cpg(void)
 {
+	struct lockspace *ls;
 	cpg_error_t error;
 	struct cpg_name name;
 	int i = 0;
 
-	if (!daemon_cpg_handle || cluster_down)
+	if (!daemon_cpg_handle)
 		return;
+	if (cluster_down)
+		goto fin;
 
 	memset(&name, 0, sizeof(name));
 	sprintf(name.value, "dlm:controld");
@@ -2072,6 +2075,12 @@ void close_cpg(void)
 	}
 	if (error != CPG_OK)
 		log_error("daemon cpg_leave error %d", error);
+ fin:
+	list_for_each_entry(ls, &lockspaces, list) {
+		if (ls->cpg_handle)
+			cpg_finalize(ls->cpg_handle);
+	}
+	cpg_finalize(daemon_cpg_handle);
 }
 
 /* fs_controld has seen nodedown for nodeid; it's now ok for dlm to do
