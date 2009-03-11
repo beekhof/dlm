@@ -388,7 +388,7 @@ void do_leave(char *name)
 	printf("done\n");
 }
 
-char *pr_master(int nodeid, uint32_t first_lkid)
+char *pr_master(int nodeid, char *first_lkid)
 {
 	static char buf[64];
 
@@ -399,7 +399,7 @@ char *pr_master(int nodeid, uint32_t first_lkid)
 	else if (!nodeid)
 		sprintf(buf, "Master");
 	else if (nodeid == -1)
-		sprintf(buf, "Lookup lkid %08x", first_lkid);
+		sprintf(buf, "Lookup lkid %s", first_lkid);
 
 	return buf;
 }
@@ -422,14 +422,15 @@ void print_rsb(char *line, struct rinfo *ri)
 {
 	char type[4], namefmt[4], *p;
 	char addr[64];
+	char first_lkid[64];
 	int rv, nodeid, root_list, recover_list, recover_locks_count, namelen;
-	uint32_t first_lkid, flags;
+	uint32_t flags;
 
-	rv = sscanf(line, "%s %s %d %u %u %d %d %u %u %s",
+	rv = sscanf(line, "%s %s %d %s %u %d %d %u %u %s",
 		    type,
 		    addr,
 		    &nodeid,
-		    &first_lkid,
+		    first_lkid,
 		    &flags,
 		    &root_list,
 		    &recover_list,
