@@ -309,7 +309,7 @@ static cib_t *cib_connect(void)
 }
 
 
-int fence_in_progress(int *unused)
+int fence_in_progress(int *in_progress)
 {
     int rc = 0;
     xmlNode *xpath_data;
@@ -323,13 +323,14 @@ int fence_in_progress(int *unused)
     rc = cib->cmds->query(cib, "//nvpar[@name='terminate']", &xpath_data,
 			  cib_xpath|cib_scope_local|cib_sync_call);
 
-    log_printf(LOG_INFO, "Fencing in progress: %s", xpath_data?"true":"false");	
-
     if(xpath_data == NULL) {
+	*in_progress = 0;
 	return 0;
     }
 
+    log_printf(LOG_INFO, "Fencing in progress: %s", xpath_data?"true":"false");	
     free_xml(xpath_data);
+    *in_progress = 1;
     return 1;
 }
 
