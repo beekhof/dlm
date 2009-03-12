@@ -60,7 +60,7 @@ int setup_cluster(void)
     crm_log_init("cluster-dlm", LOG_INFO, FALSE, TRUE, 0, NULL);
     
     if(init_ais_connection(NULL, NULL, NULL, &local_node_uname, &our_nodeid) == FALSE) {
-	log_printf(LOG_ERR, "Connection to our AIS plugin (%d) failed", CRM_SERVICE);
+	log_error("Connection to our AIS plugin (%d) failed", CRM_SERVICE);
 	return -1;
     }
 
@@ -78,7 +78,7 @@ void update_cluster(void)
     static uint64_t last_membership = 0;
     cluster_quorate = crm_have_quorum;
     if(last_membership < crm_peer_seq) {
-	log_printf(LOG_INFO, "Processing membership %llu", crm_peer_seq);
+	log_debug("Processing membership %llu", crm_peer_seq);
 	g_hash_table_foreach(crm_peer_cache, dlm_process_node, &last_membership);
 	last_membership = crm_peer_seq;
     }
@@ -168,7 +168,7 @@ void dlm_process_node(gpointer key, gpointer value, gpointer user_data)
 	    } else if(strchr(addr, ':')) {
 		rc = sscanf(addr, "ip(%[0-9A-Fa-f:])", ipaddr);
 		if(rc != 1) {
-		    log_printf(LOG_ERR, "Could not extract IPv6 address from '%s'", addr);
+		    log_error("Could not extract IPv6 address from '%s'", addr);
 		    continue;			
 		}
 		addr_family = AF_INET6;
@@ -176,26 +176,26 @@ void dlm_process_node(gpointer key, gpointer value, gpointer user_data)
 	    } else {
 		rc = sscanf(addr, "ip(%[0-9.]) ", ipaddr);
 		if(rc != 1) {
-		    log_printf(LOG_ERR, "Could not extract IPv4 address from '%s'", addr);
+		    log_error("Could not extract IPv4 address from '%s'", addr);
 		    continue;			
 		}
 	    }
 		
 	    rc = inet_pton(addr_family, ipaddr, &totem_addr);
 	    if(rc != 1) {
-		log_printf(LOG_ERR, "Could not parse '%s' as in IPv%c address", ipaddr, (addr_family==AF_INET)?'4':'6');
+		log_error("Could not parse '%s' as in IPv%c address", ipaddr, (addr_family==AF_INET)?'4':'6');
 		continue;
 	    }
 
 	    rc = totemip_parse(&totem_addr, ipaddr, addr_family);
 	    if(rc != 0) {
-		log_printf(LOG_ERR, "Could not convert '%s' into a totem address", ipaddr);
+		log_error("Could not convert '%s' into a totem address", ipaddr);
 		continue;
 	    }
 
 	    rc = totemip_totemip_to_sockaddr_convert(&totem_addr, 0, &cna_addr, &cna_len);
 	    if(rc != 0) {
-		log_printf(LOG_ERR, "Could not convert totem address for '%s' into sockaddr", ipaddr);
+		log_error("Could not convert totem address for '%s' into sockaddr", ipaddr);
 		continue;
 	    }
 
@@ -206,7 +206,7 @@ void dlm_process_node(gpointer key, gpointer value, gpointer user_data)
 	free(addr_top);
     }
 
-    log_printf(LOG_INFO, "%s %sctive node %u '%s': born-on=%llu, last-seen=%llu, this-event=%llu, last-event=%llu",
+    log_debug("%s %sctive node %u '%s': born-on=%llu, last-seen=%llu, this-event=%llu, last-event=%llu",
 	       action, crm_is_member_active(value)?"a":"ina",
 	       node->id, node->uname, node->born, node->last_seen,
 	       crm_peer_seq, (unsigned long long)*last);
@@ -226,56 +226,39 @@ char *nodeid2name(int nodeid) {
     return strdup(node->uname);
 }
 
-static IPC_Channel *attrd = NULL;
+static int pcmk_cluster_fd = 0;
 
 static void attrd_deadfn(int ci) 
 {
-    log_printf(LOG_ERR, "Lost connection to attrd");
-    attrd = NULL;
+    log_error("%s: Lost connection to the cluster", __FUNCTION__);
+    pcmk_cluster_fd = 0;
     return;
 }
 
 void kick_node_from_cluster(int nodeid)
 {
-    gboolean rc = FALSE;
-    xmlNode *update = NULL;
-    time_t now = time(NULL);
-    crm_node_t *node = crm_get_peer(nodeid, NULL);
-
-    if(node == NULL || node->uname == NULL) {
-	log_printf(LOG_ERR, "%s: Don't know how to kick node %d/%p", __FUNCTION__, nodeid, node);
-	return;
-    }
-
-    if(attrd == NULL) {
-	log_printf(LOG_INFO, "Connecting to attrd...");
-	attrd = init_client_ipc_comms_nodispatch(T_ATTRD);
-	if(attrd) {
-	    client_add(attrd->ops->get_recv_select_fd(attrd), NULL, attrd_deadfn);
-	}
+    int fd = pcmk_cluster_fd;
+    int rc = crm_terminate_member_no_mainloop(nodeid, NULL, &fd);
+    
+    if(fd > 0 && fd != pcmk_cluster_fd) {
+	pcmk_cluster_fd = fd;
+	client_add(pcmk_cluster_fd, NULL, attrd_deadfn);
     }
     
-    if(attrd != NULL) {
-	update = create_xml_node(NULL, __FUNCTION__);
-	crm_xml_add(update, F_TYPE, T_ATTRD);
-	crm_xml_add(update, F_ORIG, crm_system_name);
-    
-	crm_xml_add(update, F_ATTRD_TASK, "update");
-	crm_xml_add(update, F_ATTRD_SECTION, XML_CIB_TAG_STATUS);
-	crm_xml_add(update, F_ATTRD_ATTRIBUTE, "terminate");
-	crm_xml_add_int(update, F_ATTRD_VALUE, now);
-	crm_xml_add(update, F_ATTRD_HOST, node->uname);
-	
-	rc = send_ipc_message(attrd, update);
-	free_xml(update);
+    switch(rc) {
+	case 0:
+	    log_debug("Requested that node %d be kicked from the cluster", nodeid);
+	    break;
+	case -1:
+	    log_error("Don't know how to kick node %d from the cluster", nodeid);
+	    break;
+	case 1:
+	    log_error("Could not kick node %d from the cluster", nodeid);
+	    break;
+	default:
+	    log_error("Unknown result when kicking node %d from the cluster", nodeid);
+	    break;
     }
-
-    if(rc) {
-	log_printf(LOG_INFO, "Requested that node %d/%s be kicked from the cluster", nodeid, node->uname);
-    } else {
-	log_printf(LOG_ERR, "Could not kick node %d/%s from the cluster", nodeid, node->uname);
-    }
-    
     return;
 }
 
@@ -283,7 +266,7 @@ cib_t *cib = NULL;
 
 static void cib_deadfn(int ci) 
 {
-    log_printf(LOG_ERR, "Lost connection to the cib");
+    log_error("Lost connection to the cib");
     cib = NULL; /* TODO: memory leak in unlikely error path */
     return;
 }
@@ -299,7 +282,7 @@ static cib_t *cib_connect(void)
     cib = cib_new();
     rc = cib->cmds->signon_raw(cib, crm_system_name, cib_command, &cib_fd, NULL);
     if(rc != cib_ok) {
-	log_printf(LOG_ERR, "Signon to cib failed: %s", cib_error2string(rc));
+	log_error("Signon to cib failed: %s", cib_error2string(rc));
 	cib = NULL; /* TODO: memory leak in unlikely error path */
 
     } else {
@@ -328,7 +311,7 @@ int fence_in_progress(int *in_progress)
 	return 0;
     }
 
-    log_printf(LOG_INFO, "Fencing in progress: %s", xpath_data?"true":"false");	
+    log_debug("Fencing in progress: %s", xpath_data?"true":"false");	
     free_xml(xpath_data);
     *in_progress = 1;
     return 1;
@@ -348,7 +331,7 @@ int fence_node_time(int nodeid, uint64_t *last_fenced_time)
     }
 
     if(node == NULL || node->uname == NULL) {
-	log_printf(LOG_ERR, "Nothing known about node %d", nodeid);	
+	log_error("Nothing known about node %d", nodeid);	
 	return 0;
     }
 
@@ -363,11 +346,11 @@ int fence_node_time(int nodeid, uint64_t *last_fenced_time)
 
     if(xpath_data == NULL) {
 	/* the node has been shot - return 'now' */
-	log_printf(LOG_INFO, "Node %d/%s was last shot 'now'", nodeid, node->uname);	
+	log_debug("Node %d/%s was last shot 'now'", nodeid, node->uname);	
 	*last_fenced_time = time(NULL);
     }
 
     free_xml(xpath_data);
-    log_printf(LOG_INFO, "It does not appear node %d/%s has been shot", nodeid, node->uname);	
+    log_debug("It does not appear node %d/%s has been shot", nodeid, node->uname);	
     return 0;
 }
