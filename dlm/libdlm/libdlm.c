@@ -1174,10 +1174,12 @@ int dlm_ls_get_fd(dlm_lshandle_t lockspace)
 #ifdef _REENTRANT
 static void *dlm_recv_thread(void *lsinfo)
 {
-    struct dlm_ls_info *lsi = lsinfo;
+	struct dlm_ls_info *lsi = lsinfo;
 
-    for (;;)
-	do_dlm_dispatch(lsi->fd);
+	for (;;)
+		do_dlm_dispatch(lsi->fd);
+
+	return NULL;
 }
 
 /* Multi-threaded callers normally use this */
