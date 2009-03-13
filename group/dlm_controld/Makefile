@@ -47,7 +47,7 @@ CFLAGS += -I${incdir}
 LDFLAGS += -L${dlmlibdir} -ldlm 
 LDFLAGS += -L${logtlibdir} -llogthread
 LDFLAGS += -L${openaislibdir} -lSaCkpt
-LDFLAGS += -L${corosynclibdir} -lcpg -lcfg -lquorum
+LDFLAGS += -L${corosynclibdir} -lcpg
 LDFLAGS += -L${libdir}
 
 PCMK_LDFLAGS += -lcib -lcrmcommon -lcrmcluster -ltotem_pg
@@ -56,6 +56,7 @@ PCMK_LDFLAGS += `xml2-config --libs`
 
 CMAN_LDFLAGS += -L${ccslibdir} -lccs
 CMAN_LDFLAGS += -L${fencedlibdir} -lfenced
+CMAN_LDFLAGS += -lcfg -lquorum
 CMAN_LDDEPS += ${fencedlibdir}/libfenced.a
 
 dlm_controld: ${OBJS} ${LDDEPS} ${CMAN_LDDEPS}
