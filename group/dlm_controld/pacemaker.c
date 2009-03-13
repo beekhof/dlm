@@ -48,6 +48,10 @@ void close_logging(void) {
     closelog();
 }
 
+int setup_cluster_cfg(void) { return 0; }
+void process_cluster_cfg(int ci) {}
+void close_cluster_cfg(void) {}
+
 extern int ais_fd_async;
 
 int local_node_id = 0;
@@ -212,7 +216,7 @@ void dlm_process_node(gpointer key, gpointer value, gpointer user_data)
 	       crm_peer_seq, (unsigned long long)*last);
 }
 
-int is_cluster_member(int nodeid)
+int is_cluster_member(uint32_t nodeid)
 {
     crm_node_t *node = crm_get_peer(nodeid, NULL);
     return crm_is_member_active(node);

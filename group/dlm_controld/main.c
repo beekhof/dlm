@@ -856,7 +856,9 @@ static void loop(void)
 	rv = setup_cluster_cfg();
 	if (rv < 0)
 		goto out;
-	client_add(rv, process_cluster_cfg, cluster_dead);
+	/* Not all cluster types use cfg */
+	if(rv > 0) 
+	    client_add(rv, process_cluster_cfg, cluster_dead);
 
 	rv = setup_cluster();
 	if (rv < 0)
