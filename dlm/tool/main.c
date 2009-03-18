@@ -51,6 +51,22 @@ static int summarize;
 #define DLM_LKSTS_GRANTED       2
 #define DLM_LKSTS_CONVERT       3
 
+#define DLM_MSG_REQUEST         1
+#define DLM_MSG_CONVERT         2
+#define DLM_MSG_UNLOCK          3
+#define DLM_MSG_CANCEL          4
+#define DLM_MSG_REQUEST_REPLY   5
+#define DLM_MSG_CONVERT_REPLY   6
+#define DLM_MSG_UNLOCK_REPLY    7
+#define DLM_MSG_CANCEL_REPLY    8
+#define DLM_MSG_GRANT           9
+#define DLM_MSG_BAST            10
+#define DLM_MSG_LOOKUP          11
+#define DLM_MSG_REMOVE          12
+#define DLM_MSG_LOOKUP_REPLY    13
+#define DLM_MSG_PURGE           14
+
+
 struct dlmc_lockspace lss[MAX_LS];
 struct dlmc_node nodes[MAX_NODES];
 
@@ -90,6 +106,7 @@ struct summary {
 	unsigned int lkb_master_copy;
 	unsigned int lkb_local_copy;
 	unsigned int lkb_process_copy;
+	unsigned int expect_replies;
 };
 
 char *mode_str(int mode)
@@ -111,6 +128,42 @@ char *mode_str(int mode)
 		return "EX";
 	}
 	return "??";
+}
+
+char *msg_str(int type)
+{
+	switch (type) {
+	case DLM_MSG_REQUEST:
+		return "request";
+	case DLM_MSG_CONVERT:
+		return "convert";
+	case DLM_MSG_UNLOCK:
+		return "unlock ";
+	case DLM_MSG_CANCEL:
+		return "cancel ";
+	case DLM_MSG_REQUEST_REPLY:
+		return "r_reply";
+	case DLM_MSG_CONVERT_REPLY:
+		return "c_reply";
+	case DLM_MSG_UNLOCK_REPLY:
+		return "u_reply";
+	case DLM_MSG_CANCEL_REPLY:
+		return "c_reply";
+	case DLM_MSG_GRANT:
+		return "grant  ";
+	case DLM_MSG_BAST:
+		return "bast   ";
+	case DLM_MSG_LOOKUP:
+		return "lookup ";
+	case DLM_MSG_REMOVE:
+		return "remove ";
+	case DLM_MSG_LOOKUP_REPLY:
+		return "l_reply";
+	case DLM_MSG_PURGE:
+		return "purge  ";
+	default:
+		return "unknown";
+	}
 }
 
 static void print_usage(void)
@@ -388,7 +441,7 @@ void do_leave(char *name)
 	printf("done\n");
 }
 
-char *pr_master(int nodeid, char *first_lkid)
+char *pr_master(int nodeid)
 {
 	static char buf[64];
 
@@ -399,21 +452,26 @@ char *pr_master(int nodeid, char *first_lkid)
 	else if (!nodeid)
 		sprintf(buf, "Master");
 	else if (nodeid == -1)
-		sprintf(buf, "Lookup lkid %s", first_lkid);
+		sprintf(buf, "Lookup");
 
 	return buf;
 }
 
-char *pr_recovery(uint32_t flags, int root_list, int recover_list,
-		  int recover_locks_count)
+char *pr_extra(uint32_t flags, int root_list, int recover_list,
+	       int recover_locks_count, char *first_lkid)
 {
 	static char buf[128];
+	int first = 0;
 
 	memset(buf, 0, sizeof(buf));
 
-	if (flags || root_list || recover_list || recover_locks_count)
-		sprintf(buf, "flags %08x root %d recover %d locks_count %d",
-			flags, root_list, recover_list, recover_locks_count);
+	if (strcmp(first_lkid, "0"))
+		first = 1;
+
+	if (flags || first || root_list || recover_list || recover_locks_count)
+		sprintf(buf,
+		   "flags %08x first_lkid %s root %d recover %d locks %d",
+		   flags, first_lkid, root_list, recover_list, recover_locks_count);
 
 	return buf;
 }
@@ -466,8 +524,8 @@ void print_rsb(char *line, struct rinfo *ri)
 		goto fail;
 
 	printf("%-16s %s\n",
-		pr_master(nodeid, first_lkid),
-		pr_recovery(flags, root_list, recover_list, recover_locks_count));
+		pr_master(nodeid),
+		pr_extra(flags, root_list, recover_list, recover_locks_count, first_lkid));
 	return;
 
  fail:
@@ -716,9 +774,66 @@ static void print_summary(struct summary *s)
 	printf("  process copy  %u\n", s->lkb_process_copy);
 	printf("  rsb lookup    %u\n", s->lkb_lookup);
 	printf("  wait message  %u\n", s->lkb_wait_msg);
+	printf("  expect reply  %u\n", s->expect_replies);
 }
 
 #define LOCK_LINE_MAX 1024
+
+void do_waiters(char *name, struct summary *sum)
+{
+	FILE *file;
+	char path[PATH_MAX];
+	char line[LOCK_LINE_MAX];
+	char rname[65];
+	int header = 0;
+	int i, j, spaces;
+	int rv, nodeid, wait_type;
+	uint32_t id;
+
+	snprintf(path, PATH_MAX, "/sys/kernel/debug/dlm/%s_waiters", name);
+
+	file = fopen(path, "r");
+	if (!file)
+		return;
+
+	while (fgets(line, LOCK_LINE_MAX, file)) {
+		if (!header) {
+			printf("\n");
+			printf("Expecting reply\n");
+			header = 1;
+		}
+
+		rv = sscanf(line, "%x %d %d",
+			    &id, &wait_type, &nodeid);
+
+		if (rv != 3) {
+			printf("waiters: %s", line);
+			continue;
+		}
+
+		/* parse the resource name from the remainder of the line */
+		j = 0;
+		spaces = 0;
+
+		for (i = 0; i < LOCK_LINE_MAX; i++) {
+			if (line[i] == '\n')
+				break;
+			if (spaces == 3) {
+				rname[j++] = line[i];
+				if (j == (sizeof(rname) - 1))
+					break;
+			} else if (line[i] == ' ') {
+				spaces++;
+			}
+		}
+
+		printf("nodeid %2d msg %s lkid %08x resource \"%s\"\n",
+		       nodeid, msg_str(wait_type), id, rname);
+
+		sum->expect_replies++;
+	}
+	fclose(file);
+}
 
 void do_lockdebug(char *name)
 {
@@ -775,6 +890,8 @@ void do_lockdebug(char *name)
 		printf("%s", line);
 	}
 	fclose(file);
+
+	do_waiters(name, &summary);
 
 	if (summarize) {
 		printf("\n");
