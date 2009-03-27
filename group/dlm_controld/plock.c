@@ -1668,6 +1668,9 @@ static int _unlink_checkpoint(struct lockspace *ls, SaNameT *name)
 	h = (SaCkptCheckpointHandleT) ls->plock_ckpt_handle;
 	log_group(ls, "unlink ckpt %llx", (unsigned long long)h);
 
+	if (!h)
+		return;
+
  unlink_retry:
 	rv = saCkptCheckpointUnlink(system_ckpt_handle, name);
 	if (rv == SA_AIS_ERR_TRY_AGAIN) {
