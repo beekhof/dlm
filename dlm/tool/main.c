@@ -1182,15 +1182,14 @@ static void do_list(char *name)
 	memset(lss, 0, sizeof(lss));
 
 	if (name) {
-		rv = dlmc_lockspace_info(name, lss);
-		if (rv < 0)
-			return;
 		ls_count = 1;
+		rv = dlmc_lockspace_info(name, lss);
 	} else {
 		rv = dlmc_lockspaces(MAX_LS, &ls_count, lss);
-		if (rv < 0)
-			return;
 	}
+
+	if (rv < 0)
+		exit(EXIT_FAILURE); /* dlm_controld probably not running */
 
 	if (ls_count)
 		printf("dlm lockspaces\n");
