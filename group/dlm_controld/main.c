@@ -839,6 +839,7 @@ void cluster_dead(int ci)
 
 static void loop(void)
 {
+	struct lockspace *ls;
 	int poll_timeout = -1;
 	int rv, i;
 	void (*workfn) (int ci);
@@ -856,9 +857,8 @@ static void loop(void)
 	rv = setup_cluster_cfg();
 	if (rv < 0)
 		goto out;
-	/* Not all cluster types use cfg */
-	if(rv > 0) 
-	    client_add(rv, process_cluster_cfg, cluster_dead);
+	if (rv > 0) 
+		client_add(rv, process_cluster_cfg, cluster_dead);
 
 	rv = setup_cluster();
 	if (rv < 0)
@@ -919,6 +919,7 @@ static void loop(void)
 		if (rv == -1 && errno == EINTR) {
 			if (daemon_quit && list_empty(&lockspaces))
 				goto out;
+			log_error("shutdown ignored, active lockspaces");
 			daemon_quit = 0;
 			continue;
 		}
@@ -965,6 +966,7 @@ static void loop(void)
 		query_unlock();
 	}
  out:
+	log_debug("shutdown");
 	close_plocks();
 	close_cpg();
 	clear_configfs();
@@ -973,8 +975,8 @@ static void loop(void)
 	close_cluster();
 	close_cluster_cfg();
 
-	if (!list_empty(&lockspaces))
-		log_error("lockspaces abandoned");
+	list_for_each_entry(ls, &lockspaces, list)
+		log_error("abandoned lockspace %s", ls->name);
 }
 
 static void lockfile(void)
