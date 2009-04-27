@@ -1175,9 +1175,12 @@ void process_lockspace_changes(void)
 }
 
 static int add_change(struct lockspace *ls,
-		      struct cpg_address *member_list, int member_list_entries,
-		      struct cpg_address *left_list, int left_list_entries,
-		      struct cpg_address *joined_list, int joined_list_entries,
+		      const struct cpg_address *member_list,
+		      size_t member_list_entries,
+		      const struct cpg_address *left_list,
+		      size_t left_list_entries,
+		      const struct cpg_address *joined_list,
+		      size_t joined_list_entries,
 		      struct change **cg_out)
 {
 	struct change *cg;
@@ -1274,7 +1277,7 @@ static int add_change(struct lockspace *ls,
 	return error;
 }
 
-static int we_left(struct cpg_address *left_list, int left_list_entries)
+static int we_left(const struct cpg_address *left_list, size_t left_list_entries)
 {
 	int i;
 
@@ -1285,10 +1288,14 @@ static int we_left(struct cpg_address *left_list, int left_list_entries)
 	return 0;
 }
 
-static void confchg_cb(cpg_handle_t handle, struct cpg_name *group_name,
-		       struct cpg_address *member_list, int member_list_entries,
-		       struct cpg_address *left_list, int left_list_entries,
-		       struct cpg_address *joined_list, int joined_list_entries)
+static void confchg_cb(cpg_handle_t handle,
+		       const struct cpg_name *group_name,
+		       const struct cpg_address *member_list,
+		       size_t member_list_entries,
+		       const struct cpg_address *left_list,
+		       size_t left_list_entries,
+		       const struct cpg_address *joined_list,
+		       size_t joined_list_entries)
 {
 	struct lockspace *ls;
 	struct change *cg;
@@ -1349,8 +1356,10 @@ static void dlm_header_in(struct dlm_header *hd)
 	hd->msgdata     = le32_to_cpu(hd->msgdata);
 }
 
-static void deliver_cb(cpg_handle_t handle, struct cpg_name *group_name,
-		       uint32_t nodeid, uint32_t pid, void *data, int len)
+static void deliver_cb(cpg_handle_t handle,
+		       const struct cpg_name *group_name,
+		       uint32_t nodeid, uint32_t pid,
+		       void *data, size_t len)
 {
 	struct lockspace *ls;
 	struct dlm_header *hd;
@@ -1945,8 +1954,10 @@ int set_protocol(void)
 	return 0;
 }
 
-static void deliver_cb_daemon(cpg_handle_t handle, struct cpg_name *group_name,
-		uint32_t nodeid, uint32_t pid, void *data, int len)
+static void deliver_cb_daemon(cpg_handle_t handle,
+			      const struct cpg_name *group_name,
+			      uint32_t nodeid, uint32_t pid,
+			      void *data, size_t len)
 {
 	struct dlm_header *hd;
 
@@ -1967,10 +1978,14 @@ static void deliver_cb_daemon(cpg_handle_t handle, struct cpg_name *group_name,
 	}
 }
 
-static void confchg_cb_daemon(cpg_handle_t handle, struct cpg_name *group_name,
-		struct cpg_address *member_list, int member_list_entries,
-		struct cpg_address *left_list, int left_list_entries,
-		struct cpg_address *joined_list, int joined_list_entries)
+static void confchg_cb_daemon(cpg_handle_t handle,
+			      const struct cpg_name *group_name,
+			      const struct cpg_address *member_list,
+			      size_t member_list_entries,
+			      const struct cpg_address *left_list,
+			      size_t left_list_entries,
+			      const struct cpg_address *joined_list,
+			      size_t joined_list_entries)
 {
 	int i;
 
