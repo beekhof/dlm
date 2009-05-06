@@ -216,9 +216,9 @@ int setup_misc_devices(void);
 /* config.c */
 int setup_ccs(void);
 void close_ccs(void);
-void read_ccs_name(char *path, char *name);
-void read_ccs_yesno(char *path, int *yes, int *no);
-int read_ccs_int(char *path, int *config_val);
+void read_ccs_name(const char *path, char *name);
+void read_ccs_yesno(const char *path, int *yes, int *no);
+int read_ccs_int(const char *path, int *config_val);
 int get_weight(int nodeid, char *lockspace);
 
 /* cpg.c */
@@ -230,7 +230,7 @@ void process_lockspace_changes(void);
 void dlm_send_message(struct lockspace *ls, char *buf, int len);
 int dlm_join_lockspace(struct lockspace *ls);
 int dlm_leave_lockspace(struct lockspace *ls);
-char *msg_name(int type);
+const char *msg_name(int type);
 void update_flow_control_status(void);
 int set_node_info(struct lockspace *ls, int nodeid, struct dlmc_node *node);
 int set_lockspace_info(struct lockspace *ls, struct dlmc_lockspace *lockspace);
@@ -265,7 +265,7 @@ void client_ignore(int ci, int fd);
 void client_back(int ci, int fd);
 struct lockspace *find_ls(char *name);
 struct lockspace *find_ls_id(uint32_t id);
-char *dlm_mode_str(int mode);
+const char *dlm_mode_str(int mode);
 void cluster_dead(int ci);
 
 /* member_cman.c */

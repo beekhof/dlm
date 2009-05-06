@@ -97,7 +97,7 @@ static inline int dlm_modes_compat(int mode1, int mode2)
 	return __dlm_compat_matrix[mode1 + 1][mode2 + 1];
 }
 
-static char *status_str(int lksts)
+static const char *status_str(int lksts)
 {
 	switch (lksts) {
 	case DLM_LKSTS_WAITING:

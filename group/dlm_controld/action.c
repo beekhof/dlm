@@ -18,7 +18,8 @@ static char mg_name[DLM_LOCKSPACE_LEN+1];
 static int get_mountgroup_name(uint32_t mg_id)
 {
 	char path[PATH_MAX];
-	char *fsname, *fsdir;
+	char *fsname;
+	const char *fsdir;
 	DIR *d;
 	FILE *file;
 	struct dirent *de;
@@ -153,7 +154,7 @@ void set_associated_id(uint32_t mg_id)
 	ls->associated_mg_id = mg_id;
 }
 
-static int do_sysfs(char *name, char *file, char *val)
+static int do_sysfs(const char *name, const char *file, char *val)
 {
 	char fname[512];
 	int rv, fd;
@@ -246,7 +247,7 @@ static int id_exists(int id, int count, int *array)
 	return 0;
 }
 
-static int create_path(char *path)
+static int create_path(const char *path)
 {
 	mode_t old_umask;
 	int rv;
@@ -685,7 +686,7 @@ int add_configfs_node(int nodeid, char *addr, int addrlen, int local)
 		return -1;
 	}
 
-	rv = do_write(fd, "1", strlen("1"));
+	rv = do_write(fd, (void *)"1", strlen("1"));
 	if (rv < 0) {
 		log_error("%s: write failed: %d", path, errno);
 		close(fd);
@@ -877,7 +878,7 @@ static void find_minors(void)
 		log_error("Is dlm missing from kernel? No misc devices found.");
 }
 
-static int find_udev_device(char *path, uint32_t minor)
+static int find_udev_device(const char *path, uint32_t minor)
 {
 	struct stat st;
 	int i;

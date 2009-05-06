@@ -114,7 +114,7 @@ static void info_bswap_in(struct dlm_plock_info *i)
 	i->owner	= le64_to_cpu(i->owner);
 }
 
-static char *op_str(int optype)
+static const char *op_str(int optype)
 {
 	switch (optype) {
 	case DLM_PLOCK_OP_LOCK:
@@ -128,7 +128,7 @@ static char *op_str(int optype)
 	}
 }
 
-static char *ex_str(int optype, int ex)
+static const char *ex_str(int optype, int ex)
 {
 	if (optype == DLM_PLOCK_OP_UNLOCK || optype == DLM_PLOCK_OP_GET)
 		return "-";
