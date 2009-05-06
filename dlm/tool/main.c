@@ -649,7 +649,7 @@ static void print_lkb(char *line, struct rinfo *ri)
 	char type[4];
 	int rv;
 
-	rv = sscanf(line, "%s %x %d %x %u %llu %x %x %d %d %d %d %d %d %u %llu %llu",
+	rv = sscanf(line, "%s %x %d %x %u %"PRIu64" %x %x %d %d %d %d %d %d %u %"PRIu64" %"PRIu64,
 		    type,
 		    &lkb.id,
 		    &lkb.nodeid,
