@@ -220,9 +220,9 @@ extern int dlm_ls_purge(dlm_lshandle_t lockspace,
  */
 
 #ifdef _REENTRANT
-extern int dlm_pthread_init();
+extern int dlm_pthread_init(void);
 extern int dlm_ls_pthread_init(dlm_lshandle_t lockspace);
-extern int dlm_pthread_cleanup();
+extern int dlm_pthread_cleanup(void);
 #endif
 
 

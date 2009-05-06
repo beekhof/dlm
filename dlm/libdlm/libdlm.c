@@ -246,7 +246,7 @@ static int ls_pthread_cleanup(struct dlm_ls_info *lsinfo)
 }
 
 /* Cleanup default lockspace */
-int dlm_pthread_cleanup()
+int dlm_pthread_cleanup(void)
 {
     struct dlm_ls_info *lsinfo = default_ls;
 
@@ -1185,7 +1185,7 @@ static void *dlm_recv_thread(void *lsinfo)
 }
 
 /* Multi-threaded callers normally use this */
-int dlm_pthread_init()
+int dlm_pthread_init(void)
 {
     if (open_default_lockspace())
 	return -1;
