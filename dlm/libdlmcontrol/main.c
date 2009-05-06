@@ -88,7 +88,7 @@ static void init_header(struct dlmc_header *h, int cmd, char *name,
 		strncpy(h->name, name, DLM_LOCKSPACE_LEN);
 }
 
-int do_dump(int cmd, char *name, char *buf)
+static int do_dump(int cmd, char *name, char *buf)
 {
 	struct dlmc_header h, *rh;
 	char *reply;
