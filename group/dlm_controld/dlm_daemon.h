@@ -304,7 +304,7 @@ int fill_plock_dump_buf(struct lockspace *ls);
 /* logging.c */
 
 void init_logging(void);
-void setup_logging();
+void setup_logging(void);
 void close_logging(void);
 
 #endif
