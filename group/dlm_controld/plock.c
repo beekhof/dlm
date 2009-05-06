@@ -1669,7 +1669,7 @@ static int _unlink_checkpoint(struct lockspace *ls, SaNameT *name)
 	log_group(ls, "unlink ckpt %llx", (unsigned long long)h);
 
 	if (!h)
-		return;
+		return ret;
 
  unlink_retry:
 	rv = saCkptCheckpointUnlink(system_ckpt_handle, name);
