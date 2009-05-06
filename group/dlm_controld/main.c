@@ -726,12 +726,12 @@ static int setup_listener(const char *sock_path)
 	return s;
 }
 
-void query_lock(void)
+static void query_lock(void)
 {
 	pthread_mutex_lock(&query_mutex);
 }
 
-void query_unlock(void)
+static void query_unlock(void)
 {
 	pthread_mutex_unlock(&query_mutex);
 }
