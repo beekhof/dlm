@@ -1543,11 +1543,6 @@ void process_saved_plocks(struct lockspace *ls)
 	}
 }
 
-void plock_exit(void)
-{
-	saCkptFinalize(system_ckpt_handle);
-}
-
 /* locks still marked SYNCING should not go into the ckpt; the new node
    will get those locks by receiving PLOCK_SYNC messages */
 
