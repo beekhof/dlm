@@ -1079,9 +1079,9 @@ static int node_compare(const void *va, const void *vb)
 	return a->nodeid - b->nodeid;
 }
 
-static void show_nodeids(int count, struct dlmc_node *nodes)
+static void show_nodeids(int count, struct dlmc_node *nodes_in)
 {
-	struct dlmc_node *n = nodes;
+	struct dlmc_node *n = nodes_in;
 	int i;
 
 	for (i = 0; i < count; i++) {
@@ -1153,9 +1153,9 @@ static int member_int(struct dlmc_node *n)
 	return 0;
 }
 
-static void show_all_nodes(int count, struct dlmc_node *nodes)
+static void show_all_nodes(int count, struct dlmc_node *nodes_in)
 {
-	struct dlmc_node *n = nodes;
+	struct dlmc_node *n = nodes_in;
 	int i;
 
 	for (i = 0; i < count; i++) {
