@@ -1371,7 +1371,7 @@ static void deliver_cb(cpg_handle_t handle,
 	}
 
 	if (len < sizeof(*hd)) {
-		log_error("deliver_cb short message %d", len);
+		log_error("deliver_cb short message %zd", len);
 		return;
 	}
 
@@ -1962,7 +1962,7 @@ static void deliver_cb_daemon(cpg_handle_t handle,
 	struct dlm_header *hd;
 
 	if (len < sizeof(*hd)) {
-		log_error("deliver_cb short message %d", len);
+		log_error("deliver_cb short message %zd", len);
 		return;
 	}
 
