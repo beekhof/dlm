@@ -10,7 +10,7 @@
 #include <linux/genetlink.h>
 #include <linux/dlm_netlink.h>
 
-#define LOCKFILE_NAME	"/var/run/dlm_controld.pid"
+#define LOCKFILE_NAME	CLUSTERVARRUN "/dlm_controld.pid"
 #define CLIENT_NALLOC	32
 
 static int client_maxi;
