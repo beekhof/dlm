@@ -1,4 +1,4 @@
-#include "clusterautoconfig.h"
+#include "dlm_daemon.h"
 
 #include <sys/types.h>
 #include <asm/types.h>
@@ -23,7 +23,6 @@
 #include <unistd.h>
 #include <dirent.h>
 
-#include "dlm_daemon.h"
 #include "config.h"
 #include "ccs.h"
 

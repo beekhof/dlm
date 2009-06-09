@@ -1,5 +1,3 @@
-#include "clusterautoconfig.h"
-
 #include "dlm_daemon.h"
 #include "config.h"
 #include <linux/dlm.h>

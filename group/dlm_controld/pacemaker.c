@@ -1,9 +1,8 @@
-#include "clusterautoconfig.h"
+#include "dlm_daemon.h"
 
 #include <syslog.h>
 
 #include "config.h"
-#include "dlm_daemon.h"
 
 #include <glib.h>
 #include <bzlib.h>
