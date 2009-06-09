@@ -1,3 +1,5 @@
+#include "clusterautoconfig.h"
+
 #include <sys/types.h>
 #include <asm/types.h>
 #include <sys/uio.h>

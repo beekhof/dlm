@@ -1,7 +1,7 @@
-prefix=@PREFIX@
+prefix=@prefix@
 exec_prefix=${prefix}
-libdir=@LIBDIR@
-includedir=@INCDIR@
+libdir=@libdir@
+includedir=${prefix}/include
 
 Name: libdlmcontrol
 Version: @VERSION@

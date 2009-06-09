@@ -1,6 +1,8 @@
 
 /* Ping Test the locking interface */
 
+#include "clusterautoconfig.h"
+
 #ifdef __linux__
 #include <pthread.h>
 #include <errno.h>

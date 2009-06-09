@@ -1,3 +1,5 @@
+#include "clusterautoconfig.h"
+
 #include <syslog.h>
 
 #include "config.h"

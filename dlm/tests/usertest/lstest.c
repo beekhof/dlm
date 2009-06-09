@@ -1,5 +1,7 @@
 /* Test program for userland lockspaces */
 
+#include "clusterautoconfig.h"
+
 #ifdef _REENTRANT
 #include <pthread.h>
 #endif

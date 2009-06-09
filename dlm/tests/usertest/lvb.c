@@ -1,5 +1,7 @@
 /* Simple LVB test prog */
 
+#include "clusterautoconfig.h"
+
 #ifdef VMS
 #include starlet
 #include psldef

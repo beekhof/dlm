@@ -1,6 +1,9 @@
 /* Flood the DLM !
    but not too much...
 */
+
+#include "clusterautoconfig.h"
+
 #include <pthread.h>
 #include <sys/types.h>
 #include <sys/uio.h>

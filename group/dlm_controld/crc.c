@@ -1,3 +1,5 @@
+#include "clusterautoconfig.h"
+
 #include "dlm_daemon.h"
 
 static const uint32_t crc_32_tab[] = {

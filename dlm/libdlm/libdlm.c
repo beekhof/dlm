@@ -1,3 +1,5 @@
+#include "clusterautoconfig.h"
+
 #ifdef _REENTRANT
 #include <pthread.h>
 #endif

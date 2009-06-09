@@ -1,5 +1,7 @@
 /* Test program for userland DLM interface */
 
+#include "clusterautoconfig.h"
+
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <netinet/in.h>

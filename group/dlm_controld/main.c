@@ -1,3 +1,5 @@
+#include "clusterautoconfig.h"
+
 #include "dlm_daemon.h"
 #include "config.h"
 #include <pthread.h>
@@ -1142,7 +1144,7 @@ static void read_arguments(int argc, char **argv)
 
 		case 'V':
 			printf("dlm_controld %s (built %s %s)\n",
-				RELEASE_VERSION, __DATE__, __TIME__);
+				VERSION, __DATE__, __TIME__);
 			printf("%s\n", REDHAT_COPYRIGHT);
 			exit(EXIT_SUCCESS);
 			break;
@@ -1215,7 +1217,7 @@ int main(int argc, char **argv)
 	}
 	lockfile();
 	init_logging();
-	log_level(LOG_INFO, "dlm_controld %s started", RELEASE_VERSION);
+	log_level(LOG_INFO, "dlm_controld %s started", VERSION);
 	signal(SIGTERM, sigterm_handler);
 	set_scheduler();
 	set_oom_adj(-16);
