@@ -12,6 +12,7 @@ AC_CONFIG_SRCDIR([dlm/libdlm/libdlm.c])
 AC_CONFIG_HEADERS([make/clusterautoconfig.h])
 
 AC_CANONICAL_HOST
+AC_PROG_LIBTOOL
 
 AC_LANG([C])
 
@@ -30,7 +31,7 @@ if test "$prefix" = "NONE"; then
 			libdir="/usr/lib64"
 		else
 			libdir="/usr/lib"
-		fi	
+		fi
 	fi
 fi
 
