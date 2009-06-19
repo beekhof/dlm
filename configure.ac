@@ -154,12 +154,17 @@ BACKUP_CPPFLAGS="$CPPFLAGS"
 CPPFLAGS="$KERNEL_CPPFLAGS"
 
 # check kernel headers
+AC_CHECK_HEADERS([linux/major.h linux/types.h linux/dlmconstants.h])
+AC_CHECK_HEADERS([linux/dlm.h linux/dlm_device.h])
 # 2.6.26 adds dlm_plock.h that's our checking barrier, instead
 # of implementing some insane kernel version checks
-AC_CHECK_HEADERS([linux/major.h linux/types.h linux/dlmconstants.h linux/dlm.h linux/dlm_device.h linux/dlm_plock.h],,
+# At least on 2.6.27.21-170.2.56.fc10.x86_64, one must include
+# <linux/types.h> to avoid syntax errors regarding __u32.
+AC_CHECK_HEADERS([linux/dlm_plock.h],,
 		 [AC_MSG_ERROR([Unable to find dlm kernel headers.
 Make sure to install kernel headers 2.6.26 (or higher) or use --with-kernel=path
-configure option to point to the kernel source.])])
+configure option to point to the kernel source.])],
+  [#include <linux/types.h>])
 
 
 CPPFLAGS="$BACKUP_CPPFLAGS"
