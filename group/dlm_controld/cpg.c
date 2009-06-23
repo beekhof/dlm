@@ -1,8 +1,6 @@
 #include "dlm_daemon.h"
 #include "config.h"
 
-uint32_t cpgname_to_crc(const char *data, int len);
-
 struct protocol_version {
 	uint16_t major;
 	uint16_t minor;
