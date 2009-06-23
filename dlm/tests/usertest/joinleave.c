@@ -38,7 +38,7 @@ int main(int argc, char *argv[])
 	gettimeofday(&begin, NULL);
 	dh = dlm_create_lockspace(name, 0600);
 	if (!dh) {
-		printf("dlm_create_lockspace error %d %d\n", (int) dh, errno);
+		printf("dlm_create_lockspace error %p %d\n", dh, errno);
 		return -ENOTCONN;
 	}
 	gettimeofday(&end, NULL);

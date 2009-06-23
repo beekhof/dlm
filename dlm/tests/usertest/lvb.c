@@ -32,6 +32,7 @@ struct lksb
 #include <stdlib.h>
 #include <string.h>
 #include <libdlm.h>
+#include <unistd.h>
 #define LCK$M_VALBLK LKF_VALBLK
 #define LCK$M_CONVERT LKF_CONVERT
 #define LCK$K_CRMODE LKM_CRMODE
@@ -96,7 +97,7 @@ static struct lksb our_lksb;
 static int cur_mode;
 static void compast_routine(void *arg);
 static void blockast_routine(void *arg, int mode);
-static char *name = "TESTLOCK";
+static const char *name = "TESTLOCK";
 
 #ifdef __linux__
 static char lksb_lvb[DLM_LVB_LEN];
@@ -112,7 +113,7 @@ static void start_lock(int mode)
 /* Make a descriptor of the name */
     memset(&name_s, 0, sizeof(struct dsc$descriptor_s));
     name_s.dsc$w_length = strlen(name);
-    name_s.dsc$a_pointer = name;
+    name_s.dsc$a_pointer = (char *)name;
 
     /* Lock it */
     status = sys$enq(0,
@@ -170,7 +171,7 @@ static int convert_lock(int mode, char *lvb)
     return status;
 }
 
-static void unlock()
+static void unlock(void)
 {
     int status;
 
@@ -228,8 +229,10 @@ int main(int argc, char *argv[])
     start_lock(LCK$K_CRMODE);
 
     do {
+      char cmd;
+
       fgets(buf, sizeof(buf), stdin);
-      char cmd = buf[0] & 0x5F;
+      cmd = buf[0] & 0x5F;
 
       if (cmd == 'W')
 	convert_lock(LCK$K_CRMODE, &buf[1]);

@@ -41,7 +41,7 @@ int main(int argc, char *argv[])
 {
 	unsigned long long offset;
 	unsigned long long num, last_num = 0;
-	unsigned int id, clients, sleep = 0;
+	unsigned int id, clients, sleeptime = 0;
 	unsigned long long skip = 0;
 	char *name;
 	int rv;
@@ -58,13 +58,13 @@ int main(int argc, char *argv[])
 	clients = atoi(argv[4]);
 
 	if (argc > 5)
-		sleep = atoi(argv[5]);
+		sleeptime = atoi(argv[5]);
 
 	printf("Joining \"alternate\" lockspace...\n");
 
 	dh = dlm_create_lockspace("alternate", 0600);
 	if (!dh) {
-		printf("dlm_create_lockspace error %d %d\n", (int) dh, errno);
+		printf("dlm_create_lockspace error %p %d\n",dh, errno);
 		return -ENOTCONN;
 	}
 
@@ -155,8 +155,8 @@ int main(int argc, char *argv[])
 					lksb.sb_status);
 		}
 
-		if (sleep)
-			usleep(sleep);
+		if (sleeptime)
+			usleep(sleeptime);
 	}
 
 	dlm_ls_unlock_wait(dh, lksb.sb_lkid, 0, &lksb);

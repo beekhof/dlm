@@ -55,7 +55,7 @@ static int modetonum(char *modestr)
     return mode;
 }
 
-static char *numtomode(int mode)
+static const char *numtomode(int mode)
 {
     switch (mode)
     {
@@ -90,10 +90,10 @@ static void usage(char *prog, FILE *file)
 
 static void ast_routine(void *arg)
 {
-    struct dlm_lksb *lksb = arg;
+    struct dlm_lksb *alksb = arg;
 
     if (!quiet)
-	printf("ast called, status = %d, lkid=%x\n", lksb->sb_status, lksb->sb_lkid);
+	printf("ast called, status = %d, lkid=%x\n", alksb->sb_status, alksb->sb_lkid);
 
     /* Wake the main thread */
     if (use_threads)
@@ -110,14 +110,14 @@ static void ast_routine(void *arg)
 
 static void bast_routine(void *arg)
 {
-    struct dlm_lksb *lksb = arg;
+    struct dlm_lksb *blksb = arg;
 
     if (!quiet)
-	printf("\nblocking ast called, status = %d, lkid=%x\n", lksb->sb_status, lksb->sb_lkid);
+	printf("\nblocking ast called, status = %d, lkid=%x\n", blksb->sb_status, blksb->sb_lkid);
 }
 
 /* Using poll(2) to wait for and dispatch ASTs */
-static int poll_for_ast()
+static int poll_for_ast(void)
 {
     struct pollfd pfd;
 
@@ -138,7 +138,7 @@ static int poll_for_ast()
 
 int main(int argc, char *argv[])
 {
-    char *resource = "LOCK-NAME";
+    const char *resource = "LOCK-NAME";
     int  flags = 0;
     int  delay = 0;
     int  status;

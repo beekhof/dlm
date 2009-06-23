@@ -21,7 +21,6 @@
 
 #include "libdlm.h"
 
-static struct dlm_lksb lksb;
 static int modetonum(char *modestr)
 {
     int mode = LKM_EXMODE;
@@ -36,7 +35,7 @@ static int modetonum(char *modestr)
     return mode;
 }
 
-static char *numtomode(int mode)
+static const char *numtomode(int mode)
 {
     switch (mode)
     {
@@ -138,7 +137,7 @@ struct dlm_lksb tmplksb;
 
 int main(int argc, char *argv[])
 {
-    char *resource = "LOCK-NAME";
+    const char *resource = "LOCK-NAME";
     int  flags = 0;
     int  status;
     int  delay = 5;
@@ -150,7 +149,6 @@ int main(int argc, char *argv[])
     int  do_query = 0;
     int  do_expedite = 0;
     signed char opt;
-    int i;
 
     /* Deal with command-line arguments */
     opterr = 0;

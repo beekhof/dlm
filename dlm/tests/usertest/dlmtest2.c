@@ -123,7 +123,7 @@ static int rand_int(int a, int b)
 	return a + (int) (((float)(b - a + 1)) * random() / (RAND_MAX+1.0)); 
 }
 
-static char *status_str(int status)
+static const char *status_str(int status)
 {
 	static char sts_str[8];
 
@@ -148,7 +148,7 @@ static char *status_str(int status)
 	}
 }
 
-static char *op_str(int op)
+static const char *op_str(int op)
 {
 	switch (op) {
 	case Op_lock:
@@ -461,7 +461,7 @@ static void lock_all(int mode)
 		lock(i, mode);
 }
 
-static char *uflags(uint32_t flags)
+static const char *uflags(uint32_t flags)
 {
 	if (flags == LKF_FORCEUNLOCK)
 		return "FORCEUNLOCK";
@@ -1450,7 +1450,6 @@ int main(int argc, char *argv[])
 			break;
 	}
 
- out:
 	if (openclose_ls) {
 		printf("dlm_close_lockspace\n");
 

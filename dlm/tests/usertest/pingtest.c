@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <netdb.h>
+#include <unistd.h>
 
 #include <libdlm.h>
 
@@ -60,7 +61,7 @@ static int *lvb_int = (int *)&our_lksb.sb_lvb;
 #define SUCCESS SS$_NORMAL
 #endif
 
-static char *lockname="ping";
+static const char *lockname="ping";
 static int us = 1;
 static int maxnode = 2;
 static int cur_mode;
@@ -72,7 +73,6 @@ static void blockast_routine(void *arg);
 #ifdef __linux__
 static int convert_lock(int mode)
 {
-    int old_mode = cur_mode;
     int status;
 
     printf("pinglock: convert to %d starting\n", mode);
@@ -98,7 +98,7 @@ static int convert_lock(int mode)
     return status;
 }
 
-static void unlock()
+static void unlock(void)
 {
     int status;
     status = dlm_unlock( our_lksb.sb_lkid,
@@ -110,7 +110,7 @@ static void unlock()
 
 }
 
-static void start_lock()
+static void start_lock(void)
 {
     int status;
     cur_mode = LKM_EXMODE;

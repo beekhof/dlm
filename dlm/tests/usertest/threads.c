@@ -56,20 +56,6 @@ static int modetonum(char *modestr)
     return mode;
 }
 
-static char *numtomode(int mode)
-{
-    switch (mode)
-    {
-    case LKM_NLMODE: return "NL";
-    case LKM_CRMODE: return "CR";
-    case LKM_CWMODE: return "CW";
-    case LKM_PRMODE: return "PR";
-    case LKM_PWMODE: return "PW";
-    case LKM_EXMODE: return "EX";
-    default: return "??";
-    }
-}
-
 static void usage(char *prog, FILE *file)
 {
     fprintf(file, "Usage:\n");
@@ -174,11 +160,11 @@ static int sync_unlock(dlm_lshandle_t lockspace, int lockid)
 static void *thread_fn(void *arg)
 {
 	struct thread_args *ta = arg;
-	int lockid;
+	int lockid=0;
 	int status;
 
 	if (ta->verbose > 1)
-		fprintf(stderr, "Locking in thread %d\n", pthread_self);
+		fprintf(stderr, "Locking in thread %lx\n", pthread_self());
 
 	status = sync_lock(ta->lockspace, ta->resource,
 			   ta->mode, ta->flags, &lockid);
@@ -186,20 +172,20 @@ static void *thread_fn(void *arg)
 	if (status)
 	{
 		if (ta->verbose)
-			fprintf(stderr, "Lock in thread %x failed: %s\n", pthread_self, strerror(errno));
+			fprintf(stderr, "Lock in thread %lx failed: %s\n", pthread_self(), strerror(errno));
 		return NULL;
 	}
 
 	sleep(ta->delay);
 
 	if (ta->verbose > 1)
-		fprintf(stderr, "Unlocking in thread %x\n", pthread_self());
+		fprintf(stderr, "Unlocking in thread %lx\n", pthread_self());
 
 	status = sync_unlock(ta->lockspace,lockid);
 	if (status)
 	{
 		if (ta->verbose)
-			fprintf(stderr, "Unlock in thread %x failed: %s\n", pthread_self(), strerror(errno));
+			fprintf(stderr, "Unlock in thread %lx failed: %s\n", pthread_self(), strerror(errno));
 	}
 
 	return NULL;
@@ -208,14 +194,14 @@ static void *thread_fn(void *arg)
 
 int main(int argc, char *argv[])
 {
-    char *resource = "LOCK-NAME";
-    char *lockspace_name = "threadtest";
+    char const *resource = "LOCK-NAME";
+    char const *lockspace_name = "threadtest";
     dlm_lshandle_t *lockspace;
     int  flags = 0;
     int  num_threads = 5;
     int  delay = 1;
-    int  mode;
-    int  verbose;
+    int  mode = LKM_EXMODE;
+    int  verbose = 0;
     int  i;
     signed char opt;
     pthread_t *threads;
@@ -299,7 +285,7 @@ int main(int argc, char *argv[])
     ta.flags = flags;
     ta.delay = delay;
     ta.verbose = verbose;
-    ta.resource = resource;
+    ta.resource = (char *)resource;
 
     for (i=0; i<num_threads; i++)
     {
