@@ -120,7 +120,7 @@ static void unlockf(int i);
 
 static int rand_int(int a, int b)
 {
-	return a + (int) (((float)(b - a + 1)) * random() / (RAND_MAX+1.0)); 
+	return a + (int) (((float)(b - a + 1)) * random() / (RAND_MAX+1.0));
 }
 
 static const char *status_str(int status)
@@ -1415,7 +1415,7 @@ int main(int argc, char *argv[])
 
 	client_add(libdlm_fd, &maxi);
 
-	if (cmd) {
+	if (opt_cmd) {
 		process_command(&quit);
 		goto out;
 	}
@@ -1450,6 +1450,7 @@ int main(int argc, char *argv[])
 			break;
 	}
 
+ out:
 	if (openclose_ls) {
 		printf("dlm_close_lockspace\n");
 
@@ -1466,4 +1467,3 @@ int main(int argc, char *argv[])
 
 	return 0;
 }
-
