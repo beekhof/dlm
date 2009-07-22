@@ -731,6 +731,7 @@ static void do_get(struct lockspace *ls, struct dlm_plock_info *in,
 		rv = 0;
 
 	write_result(ls, in, rv);
+	put_resource(r);
 }
 
 static void save_message(struct lockspace *ls, struct dlm_header *hd, int len,
