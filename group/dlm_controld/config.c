@@ -26,8 +26,8 @@
 #include "config.h"
 #include "ccs.h"
 
-#define PROTO_TCP  1
-#define PROTO_SCTP 2
+#define PROTO_TCP  0
+#define PROTO_SCTP 1
 
 int ccs_handle;
 
