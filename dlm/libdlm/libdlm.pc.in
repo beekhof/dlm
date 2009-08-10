@@ -7,5 +7,5 @@ Name: libdlm
 Version: @VERSION@
 Description: Cluster Distributed Lock Manager library
 Requires:
-Libs: -L${libdir} -ldlm
+Libs: -L${libdir} -ldlm -lpthread
 Cflags: -I${includedir}
