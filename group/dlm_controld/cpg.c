@@ -651,26 +651,23 @@ static int wait_conditions_done(struct lockspace *ls)
 	   just the latest change */
 
 	if (!check_fencing_done(ls)) {
-		poll_fencing = 1;
+		poll_fencing++;
 		return 0;
 	}
-	poll_fencing = 0;
 
 	/* even though fencing also waits for quorum, checking fencing isn't
 	   sufficient because we don't want to start new lockspaces in an
 	   inquorate cluster */
 
 	if (!check_quorum_done(ls)) {
-		poll_quorum = 1;
+		poll_quorum++;
 		return 0;
 	}
-	poll_quorum = 0;
 
 	if (!check_fs_done(ls)) {
-		poll_fs = 1;
+		poll_fs++;
 		return 0;
 	}
-	poll_fs = 0;
 
 	return 1;
 }
@@ -1166,6 +1163,9 @@ void process_lockspace_changes(void)
 {
 	struct lockspace *ls, *safe;
 
+	poll_fencing = 0;
+	poll_quorum = 0;
+	poll_fs = 0;
 	list_for_each_entry_safe(ls, safe, &lockspaces, list) {
 		if (!list_empty(&ls->changes))
 			apply_changes(ls);
