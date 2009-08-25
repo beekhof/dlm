@@ -963,6 +963,13 @@ static void loop(void)
 			}
 			poll_timeout = 1000;
 		}
+
+		if (poll_drop_plock) {
+			drop_resources_all();
+			if (poll_drop_plock)
+				poll_timeout = 1000;
+		}
+
 		query_unlock();
 	}
  out:
@@ -1248,6 +1255,7 @@ int poll_fencing;
 int poll_quorum;
 int poll_fs;
 int poll_ignore_plock;
+int poll_drop_plock;
 int plock_fd;
 int plock_ci;
 struct list_head lockspaces;

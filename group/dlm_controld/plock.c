@@ -1350,7 +1350,19 @@ static int drop_resources(struct lockspace *ls)
 	struct timeval now;
 	int count = 0;
 
+	if (!cfgd_plock_ownership)
+		return 0;
+
+	if (list_empty(&ls->plock_resources))
+		return 0;
+
 	gettimeofday(&now, NULL);
+
+	if (time_diff_ms(&ls->drop_resources_last, &now) <
+			 cfgd_drop_resources_time)
+		return 1;
+
+	ls->drop_resources_last = now;
 
 	/* try to drop the oldest, unused resources */
 
@@ -1375,7 +1387,21 @@ static int drop_resources(struct lockspace *ls)
 		}
 	}
 
-	return 0;
+	return 1;
+}
+
+void drop_resources_all(void)
+{
+	struct lockspace *ls;
+	int rv = 0;
+
+	poll_drop_plock = 0;
+
+	list_for_each_entry(ls, &lockspaces, list) {
+		rv = drop_resources(ls);
+		if (rv)
+			poll_drop_plock = 1;
+	}
 }
 
 int limit_plocks(void)
@@ -1494,13 +1520,8 @@ void process_plocks(int ci)
 		save_pending_plock(ls, r, &info);
 	}
 
-	if (cfgd_plock_ownership &&
-	    time_diff_ms(&ls->drop_resources_last, &now) >=
-	    		 cfgd_drop_resources_time) {
-		ls->drop_resources_last = now;
-		drop_resources(ls);
-	}
-
+	if (cfgd_plock_ownership && !list_empty(&ls->plock_resources))
+		poll_drop_plock = 1;
 	return;
 
  fail:
