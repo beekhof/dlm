@@ -105,7 +105,7 @@ do { \
 	snprintf(daemon_debug_buf, 255, "%ld %s " fmt "\n", time(NULL), \
 		 (ls)->name, ##args); \
 	daemon_dump_save(); \
-	logt_print(LOG_DEBUG, fmt "\n", ##args); \
+	logt_print(LOG_DEBUG, "%s " fmt "\n", (ls)->name, ##args); \
 	if (daemon_debug_opt) \
 		fprintf(stderr, "%s", daemon_debug_buf); \
 } while (0)
