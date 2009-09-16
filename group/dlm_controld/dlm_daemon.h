@@ -223,9 +223,9 @@ int read_ccs_int(const char *path, int *config_val);
 int get_weight(int nodeid, char *lockspace);
 
 /* cpg.c */
-int setup_cpg(void);
-void close_cpg(void);
-void process_cpg(int ci);
+int setup_cpg_daemon(void);
+void close_cpg_daemon(void);
+void process_cpg_daemon(int ci);
 int set_protocol(void);
 void process_lockspace_changes(void);
 void dlm_send_message(struct lockspace *ls, char *buf, int len);
@@ -233,6 +233,8 @@ int dlm_join_lockspace(struct lockspace *ls);
 int dlm_leave_lockspace(struct lockspace *ls);
 const char *msg_name(int type);
 void update_flow_control_status(void);
+void node_history_cluster_add(int nodeid);
+void node_history_cluster_remove(int nodeid);
 int set_node_info(struct lockspace *ls, int nodeid, struct dlmc_node *node);
 int set_lockspace_info(struct lockspace *ls, struct dlmc_lockspace *lockspace);
 int set_lockspaces(int *count, struct dlmc_lockspace **lss_out);

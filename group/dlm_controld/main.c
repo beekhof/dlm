@@ -890,10 +890,10 @@ static void loop(void)
 		goto out;
 	client_add(rv, process_uevent, NULL);
 
-	rv = setup_cpg();
+	rv = setup_cpg_daemon();
 	if (rv < 0)
 		goto out;
-	client_add(rv, process_cpg, cluster_dead);
+	client_add(rv, process_cpg_daemon, cluster_dead);
 
 	rv = set_protocol();
 	if (rv < 0)
@@ -975,7 +975,7 @@ static void loop(void)
  out:
 	log_debug("shutdown");
 	close_plocks();
-	close_cpg();
+	close_cpg_daemon();
 	clear_configfs();
 	close_logging();
 	close_ccs();
