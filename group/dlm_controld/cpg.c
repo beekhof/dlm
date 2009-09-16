@@ -921,7 +921,7 @@ static int match_change(struct lockspace *ls, struct change *cg,
 	}
 
 	if (node->cluster_add_time > cg->create_time) {
-		log_debug("match_change %d:%u skip cg %u created %llu "
+		log_group(ls, "match_change %d:%u skip cg %u created %llu "
 			  "cluster add %llu", hd->nodeid, seq, cg->seq,
 			  (unsigned long long)cg->create_time,
 			  (unsigned long long)node->cluster_add_time);
