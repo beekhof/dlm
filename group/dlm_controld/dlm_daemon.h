@@ -138,6 +138,8 @@ enum {
 /* dlm_header flags */
 #define DLM_MFLG_JOINING   1  /* accompanies start, we are joining */
 #define DLM_MFLG_HAVEPLOCK 2  /* accompanies start, we have plock state */
+#define DLM_MFLG_NACK      4  /* accompanies start, prevent wrong match when
+				 two outstanding changes are the same */
 
 struct dlm_header {
 	uint16_t version[3];

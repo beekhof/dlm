@@ -904,6 +904,12 @@ static int match_change(struct lockspace *ls, struct change *cg,
 		return 0;
 	}
 
+	if (memb->start_flags & DLM_MFLG_NACK) {
+		log_group(ls, "match_change %d:%u skip %u is nacked",
+			  hd->nodeid, seq, cg->seq);
+		return 0;
+	}
+
 	if (memb->start && hd->type == DLM_MSG_START) {
 		log_group(ls, "match_change %d:%u skip %u already start",
 			  hd->nodeid, seq, cg->seq);
@@ -1052,6 +1058,11 @@ static void receive_start(struct lockspace *ls, struct dlm_header *hd, int len)
 		return;
 	}
 
+	if (memb->start_flags & DLM_MFLG_NACK) {
+		log_group(ls, "receive_start %d:%u is NACK", hd->nodeid, seq);
+		return;
+	}
+
 	node_history_start(ls, hd->nodeid);
 	memb->start = 1;
 }
@@ -1095,17 +1106,15 @@ static void receive_plocks_stored(struct lockspace *ls, struct dlm_header *hd,
 	ls->save_plocks = 0;
 }
 
-static void send_info(struct lockspace *ls, int type)
+static void send_info(struct lockspace *ls, struct change *cg, int type,
+		      uint32_t flags)
 {
-	struct change *cg;
 	struct dlm_header *hd;
 	struct ls_info *li;
 	struct id_info *id;
 	struct member *memb;
 	char *buf;
 	int len, id_count;
-
-	cg = list_first_entry(&ls->changes, struct change, list);
 
 	id_count = cg->member_count;
 
@@ -1127,6 +1136,8 @@ static void send_info(struct lockspace *ls, int type)
 
 	hd->type = type;
 	hd->msgdata = cg->seq;
+	hd->flags = flags;
+
 	if (ls->joining)
 		hd->flags |= DLM_MFLG_JOINING;
 	if (!ls->need_plocks)
@@ -1162,12 +1173,45 @@ static void send_info(struct lockspace *ls, int type)
 
 static void send_start(struct lockspace *ls)
 {
-	send_info(ls, DLM_MSG_START);
+	struct change *cg = list_first_entry(&ls->changes, struct change, list);
+
+	send_info(ls, cg, DLM_MSG_START, 0);
 }
 
 static void send_plocks_stored(struct lockspace *ls)
 {
-	send_info(ls, DLM_MSG_PLOCKS_STORED);
+	struct change *cg = list_first_entry(&ls->changes, struct change, list);
+
+	send_info(ls, cg, DLM_MSG_PLOCKS_STORED, 0);
+}
+
+static int same_members(struct change *cg1, struct change *cg2)
+{
+	struct member *memb;
+
+	list_for_each_entry(memb, &cg1->members, list) {
+		if (!find_memb(cg2, memb->nodeid))
+			return 0;
+	}
+	return 1;
+}
+
+static void send_nacks(struct lockspace *ls, struct change *startcg)
+{
+	struct change *cg;
+
+	list_for_each_entry(cg, &ls->changes, list) {
+		if (cg->seq < startcg->seq &&
+		    cg->member_count == startcg->member_count &&
+		    cg->joined_count == startcg->joined_count &&
+		    cg->remove_count == startcg->remove_count &&
+		    cg->failed_count == startcg->failed_count &&
+		    same_members(cg, startcg)) {
+			log_group(ls, "send nack old cg %u new cg %u",
+				   cg->seq, startcg->seq);
+			send_info(ls, cg, DLM_MSG_START, DLM_MFLG_NACK);
+		}
+	}
 }
 
 static int nodes_added(struct lockspace *ls)
@@ -1260,6 +1304,7 @@ static void apply_changes(struct lockspace *ls)
 
 	case CGST_WAIT_CONDITIONS:
 		if (wait_conditions_done(ls)) {
+			send_nacks(ls, cg);
 			send_start(ls);
 			cg->state = CGST_WAIT_MESSAGES;
 		}
