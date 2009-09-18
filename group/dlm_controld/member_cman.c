@@ -83,7 +83,7 @@ static void quorum_callback(quorum_handle_t h, uint32_t quorate,
 	for (i = 0; i < old_node_count; i++) {
 		if (!is_cluster_member(old_nodes[i])) {
 			log_debug("cluster node %u removed", old_nodes[i]);
-			node_history_cluster_remove(old_nodes[i].cn_nodeid);
+			node_history_cluster_remove(old_nodes[i]);
 			del_configfs_node(old_nodes[i]);
 		}
 	}
@@ -91,7 +91,7 @@ static void quorum_callback(quorum_handle_t h, uint32_t quorate,
 	for (i = 0; i < quorum_node_count; i++) {
 		if (!is_old_member(quorum_nodes[i])) {
 			log_debug("cluster node %u added", quorum_nodes[i]);
-			node_history_cluster_add(cman_nodes[i].cn_nodeid);
+			node_history_cluster_add(quorum_nodes[i]);
 
 			err = corosync_cfg_get_node_addrs(ch, quorum_nodes[i],
 							  MAX_NODE_ADDRESSES,
