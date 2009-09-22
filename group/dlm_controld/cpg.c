@@ -748,9 +748,15 @@ static int wait_conditions_done(struct lockspace *ls)
 		return 0;
 	}
 
-	/* even though fencing also waits for quorum, checking fencing isn't
-	   sufficient because we don't want to start new lockspaces in an
-	   inquorate cluster */
+	/* fencing waits for quorum, so we don't need to check quorum for any
+	   reasons related to safety or protection, so enable_quorum defaults
+	   to 0.  This does mean that lockspaces (and cluster fs's) can be
+	   started/enabled in an inquorate cluster if there are no outstanding
+	   fencing operations.  Some users or apps may want lockspaces/fs's to
+	   only be enabled in a quorate cluster; enable_quorum can be set to 1
+	   to get that behavior.  The main advantage of not waiting for quorum
+	   here is to allow lockspaces to be shut down (and cluster fs's
+	   unmounted) in an inquorate cluster. */
 
 	if (!check_quorum_done(ls)) {
 		poll_quorum++;
