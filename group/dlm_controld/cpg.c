@@ -2293,6 +2293,11 @@ int set_fs_notified(struct lockspace *ls, int nodeid)
 		return -ESRCH;
 	}
 
+	if (!find_memb(ls->started_change, nodeid)) {
+		log_group(ls, "set_fs_notified %d not in ls", nodeid);
+		return 0;
+	}
+
 	/* this can happen, we haven't seen a nodedown for this node yet,
 	   but we should soon */
 	if (!node->check_fs) {
