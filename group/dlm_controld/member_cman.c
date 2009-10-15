@@ -12,19 +12,6 @@ static int			old_node_count;
 static uint32_t			quorum_nodes[MAX_NODES];
 static int			quorum_node_count;
 
-void kick_node_from_cluster(int nodeid)
-{
-	if (!nodeid) {
-		log_error("telling corosync to shut down cluster locally");
-		corosync_cfg_try_shutdown(ch,
-				COROSYNC_CFG_SHUTDOWN_FLAG_IMMEDIATE);
-	} else {
-		log_error("telling corosync to remove nodeid %d from cluster",
-			  nodeid);
-		corosync_cfg_kill_node(ch, nodeid, "dlm_controld");
-	}
-}
-
 static int is_member(uint32_t *node_list, int count, uint32_t nodeid)
 {
 	int i;
@@ -45,20 +32,6 @@ int is_cluster_member(uint32_t nodeid)
 {
 	return is_member(quorum_nodes, quorum_node_count, nodeid);
 }
-
-/* what's the replacement for this? */
-#if 0
-static void cman_callback(cman_handle_t h, void *private, int reason, int arg)
-{
-	case CMAN_REASON_CONFIG_UPDATE:
-		setup_logging();
-		setup_ccs();
-		break;
-}
-#endif
-
-/* add a configfs dir for cluster members that don't have one,
-   del the configfs dir for cluster members that are now gone */
 
 static void quorum_callback(quorum_handle_t h, uint32_t quorate,
 			    uint64_t ring_seq, uint32_t node_list_entries,
@@ -175,6 +148,19 @@ void close_cluster(void)
 {
 	quorum_trackstop(qh);
 	quorum_finalize(qh);
+}
+
+void kick_node_from_cluster(int nodeid)
+{
+	if (!nodeid) {
+		log_error("telling corosync to shut down cluster locally");
+		corosync_cfg_try_shutdown(ch,
+				COROSYNC_CFG_SHUTDOWN_FLAG_IMMEDIATE);
+	} else {
+		log_error("telling corosync to remove nodeid %d from cluster",
+			  nodeid);
+		corosync_cfg_kill_node(ch, nodeid, "dlm_controld");
+	}
 }
 
 static void shutdown_callback(corosync_cfg_handle_t h,
