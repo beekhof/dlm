@@ -26,9 +26,6 @@
 #include "config.h"
 #include "ccs.h"
 
-#define PROTO_TCP  0
-#define PROTO_SCTP 1
-
 int ccs_handle;
 
 /* when not set in cluster.conf, a node's default weight is 1 */
@@ -242,6 +239,8 @@ static void read_ccs_protocol(const char *path, int *config_val)
 		val = PROTO_TCP;
 	else if (!strncasecmp(str, "sctp", 4))
 		val = PROTO_SCTP;
+	else if (!strncasecmp(str, "detect", 6))
+		val = PROTO_DETECT;
 	else {
 		log_error("ignore invalid value %s for %s", str, path);
 		return;
@@ -277,6 +276,7 @@ int setup_ccs(void)
 {
 	int cd, rv;
 
+	/* skip things that cannot be changed while running */
 	if (ccs_handle)
 		goto update;
 
@@ -309,7 +309,6 @@ int setup_ccs(void)
 		if (rv < 0)
 			read_ccs_int(GFS_PLOCK_OWNERSHIP_PATH, &cfgd_plock_ownership);
 	}
-
 
 	/* The following can be changed while running */
  update:

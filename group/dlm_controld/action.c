@@ -1,6 +1,9 @@
 #include "dlm_daemon.h"
 #include "config.h"
 
+#include <corosync/corotypes.h>
+#include <corosync/confdb.h>
+
 static int dir_members[MAX_NODES];
 static int dir_members_count;
 static int comms_nodes[MAX_NODES];
@@ -11,6 +14,58 @@ static char mg_name[DLM_LOCKSPACE_LEN+1];
 #define CLUSTER_DIR   "/sys/kernel/config/dlm/cluster"
 #define SPACES_DIR    "/sys/kernel/config/dlm/cluster/spaces"
 #define COMMS_DIR     "/sys/kernel/config/dlm/cluster/comms"
+
+static int detect_protocol(void)
+{
+	confdb_handle_t handle;
+	hdb_handle_t totem_handle;
+	char key_value[256];
+	size_t value_len;
+	int rv, proto = -1;
+	confdb_callbacks_t callbacks = {
+		.confdb_key_change_notify_fn = NULL,
+		.confdb_object_create_change_notify_fn = NULL,
+		.confdb_object_delete_change_notify_fn = NULL
+	};
+
+	rv = confdb_initialize(&handle, &callbacks);
+	if (rv != CS_OK) {
+		log_error("confdb_initialize error %d", rv);
+		return -1; 
+	}
+
+	rv = confdb_object_find_start(handle, OBJECT_PARENT_HANDLE);
+	if (rv != CS_OK) {
+		log_error("confdb_object_find_start error %d", rv);
+		goto out;
+	}
+
+	rv = confdb_object_find(handle, OBJECT_PARENT_HANDLE,
+				"totem", strlen("totem"), &totem_handle);
+	if (rv != CS_OK) {
+		log_error("confdb_object_find error %d", rv);
+		goto out;
+	}
+
+	rv = confdb_key_get(handle, totem_handle,
+			    "rrp_mode", strlen("rrp_mode"),
+			    key_value, &value_len);
+	if (rv != CS_OK) {
+		log_error("confdb_key_get error %d", rv);
+		goto out;
+	}
+
+	key_value[value_len] = '\0';
+	log_debug("totem/rrp_mode = '%s'", key_value);
+
+	if (!strcmp(key_value, "none"))
+		proto = PROTO_TCP;
+	else
+		proto = PROTO_SCTP;
+ out:
+	confdb_finalize(handle);
+	return proto;
+}
 
 /* look for an id that matches in e.g. /sys/fs/gfs/bull\:x/lock_module/id
    and then extract the "x" as the name */
@@ -824,7 +879,14 @@ int setup_configfs(void)
 		set_configfs_debug(cfgk_debug);
 	if (cfgk_timewarn != -1)
 		set_configfs_timewarn(cfgk_timewarn);
-	if (cfgk_protocol != -1)
+
+	if (cfgk_protocol == PROTO_DETECT) {
+		rv = detect_protocol();
+		if (rv == PROTO_TCP || rv == PROTO_SCTP)
+			cfgk_protocol = rv;
+	}
+
+	if (cfgk_protocol == PROTO_TCP || cfgk_protocol == PROTO_SCTP)
 		set_configfs_protocol(cfgk_protocol);
 
 	return 0;
