@@ -851,6 +851,91 @@ static int set_configfs_debug(int val)
 	return 0;
 }
 
+#define NET_RMEM_DEFAULT 4194304
+#define NET_RMEM_MAX 4194304
+
+static int set_proc_rmem(void)
+{
+	char path[PATH_MAX];
+	char buf[32];
+	int fd, rv;
+
+	memset(path, 0, PATH_MAX);
+	snprintf(path, PATH_MAX, "/proc/sys/net/core/rmem_default");
+
+	fd = open(path, O_RDWR);
+	if (fd < 0) {
+		log_error("%s: open failed: %d", path, errno);
+		return fd;
+	}
+
+	memset(buf, 0, sizeof(buf));
+
+	rv = read(fd, buf, sizeof(buf));
+	if (rv < 0) {
+		log_error("%s: read failed: %d", path, errno);
+		close(fd);
+		return rv;
+	}
+
+	if (atoi(buf) >= NET_RMEM_DEFAULT) {
+		close(fd);
+		goto next;
+	}
+
+	memset(buf, 0, sizeof(buf));
+	snprintf(buf, 32, "%d", NET_RMEM_DEFAULT);
+
+	rv = do_write(fd, buf, strlen(buf));
+	if (rv < 0) {
+		log_error("%s: write failed: %d", path, errno);
+		close(fd);
+		return rv;
+	}
+
+	close(fd);
+	log_debug("set %s %s", path, buf);
+
+ next:
+	memset(path, 0, PATH_MAX);
+	snprintf(path, PATH_MAX, "/proc/sys/net/core/rmem_max");
+
+	fd = open(path, O_RDWR);
+	if (fd < 0) {
+		log_error("%s: open failed: %d", path, errno);
+		return fd;
+	}
+
+	memset(buf, 0, sizeof(buf));
+
+	rv = read(fd, buf, sizeof(buf));
+	if (rv < 0) {
+		log_error("%s: read failed: %d", path, errno);
+		close(fd);
+		return rv;
+	}
+
+	if (atoi(buf) >= NET_RMEM_MAX) {
+		close(fd);
+		goto out;
+	}
+
+	memset(buf, 0, sizeof(buf));
+	snprintf(buf, 32, "%d", NET_RMEM_MAX);
+
+	rv = do_write(fd, buf, strlen(buf));
+	if (rv < 0) {
+		log_error("%s: write failed: %d", path, errno);
+		close(fd);
+		return rv;
+	}
+
+	close(fd);
+	log_debug("set %s %s", path, buf);
+ out:
+	return 0;
+}
+
 void clear_configfs(void)
 {
 	clear_configfs_comms();
@@ -888,6 +973,9 @@ int setup_configfs(void)
 
 	if (cfgk_protocol == PROTO_TCP || cfgk_protocol == PROTO_SCTP)
 		set_configfs_protocol(cfgk_protocol);
+
+	if (cfgk_protocol == PROTO_SCTP)
+		set_proc_rmem();
 
 	return 0;
 }
