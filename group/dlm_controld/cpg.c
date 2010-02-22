@@ -1577,40 +1577,79 @@ static void deliver_cb(cpg_handle_t handle,
 		break;
 
 	case DLM_MSG_PLOCK:
-		receive_plock(ls, hd, len);
+		if (cfgd_enable_plock)
+			receive_plock(ls, hd, len);
+		else
+			log_error("msg %d nodeid %d enable_plock %d",
+				  hd->type, nodeid, cfgd_enable_plock);
 		break;
 
 	case DLM_MSG_PLOCK_OWN:
-		receive_own(ls, hd, len);
+		if (cfgd_enable_plock && cfgd_plock_ownership)
+			receive_own(ls, hd, len);
+		else
+			log_error("msg %d nodeid %d enable_plock %d owner %d",
+				  hd->type, nodeid, cfgd_enable_plock,
+				  cfgd_plock_ownership);
 		break;
 
 	case DLM_MSG_PLOCK_DROP:
-		receive_drop(ls, hd, len);
+		if (cfgd_enable_plock && cfgd_plock_ownership)
+			receive_drop(ls, hd, len);
+		else
+			log_error("msg %d nodeid %d enable_plock %d owner %d",
+				  hd->type, nodeid, cfgd_enable_plock,
+				  cfgd_plock_ownership);
 		break;
 
 	case DLM_MSG_PLOCK_SYNC_LOCK:
 	case DLM_MSG_PLOCK_SYNC_WAITER:
-		receive_sync(ls, hd, len);
+		if (cfgd_enable_plock && cfgd_plock_ownership)
+			receive_sync(ls, hd, len);
+		else
+			log_error("msg %d nodeid %d enable_plock %d owner %d",
+				  hd->type, nodeid, cfgd_enable_plock,
+				  cfgd_plock_ownership);
 		break;
 
 	case DLM_MSG_PLOCKS_STORED:
-		receive_plocks_stored(ls, hd, len);
+		if (cfgd_enable_plock)
+			receive_plocks_stored(ls, hd, len);
+		else
+			log_error("msg %d nodeid %d enable_plock %d",
+				  hd->type, nodeid, cfgd_enable_plock);
 		break;
 
 	case DLM_MSG_DEADLK_CYCLE_START:
-		receive_cycle_start(ls, hd, len);
+		if (cfgd_enable_deadlk)
+			receive_cycle_start(ls, hd, len);
+		else
+			log_error("msg %d nodeid %d enable_deadlk %d",
+				  hd->type, nodeid, cfgd_enable_deadlk);
 		break;
 
 	case DLM_MSG_DEADLK_CYCLE_END:
-		receive_cycle_end(ls, hd, len);
+		if (cfgd_enable_deadlk)
+			receive_cycle_end(ls, hd, len);
+		else
+			log_error("msg %d nodeid %d enable_deadlk %d",
+				  hd->type, nodeid, cfgd_enable_deadlk);
 		break;
 
 	case DLM_MSG_DEADLK_CHECKPOINT_READY:
-		receive_checkpoint_ready(ls, hd, len);
+		if (cfgd_enable_deadlk)
+			receive_checkpoint_ready(ls, hd, len);
+		else
+			log_error("msg %d nodeid %d enable_deadlk %d",
+				  hd->type, nodeid, cfgd_enable_deadlk);
 		break;
 
 	case DLM_MSG_DEADLK_CANCEL_LOCK:
-		receive_cancel_lock(ls, hd, len);
+		if (cfgd_enable_deadlk)
+			receive_cancel_lock(ls, hd, len);
+		else
+			log_error("msg %d nodeid %d enable_deadlk %d",
+				  hd->type, nodeid, cfgd_enable_deadlk);
 		break;
 
 	default:
