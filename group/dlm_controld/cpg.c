@@ -506,8 +506,10 @@ static void node_history_fail(struct lockspace *ls, int nodeid,
 	if (cfgd_enable_quorum && !cfgd_enable_fencing)
 		node->check_quorum = 1;
 
-	if (ls->fs_registered)
+	if (ls->fs_registered) {
+		log_group(ls, "check_fs nodeid %d set", nodeid);
 		node->check_fs = 1;
+	}
 
 	node->removed_seq = cg->seq;	/* for queries */
 	node->failed_reason = reason;	/* for queries */
@@ -635,6 +637,7 @@ static int check_fs_done(struct lockspace *ls)
 			continue;
 
 		if (node->fs_notified) {
+			log_group(ls, "check_fs nodeid %d clear", node->nodeid);
 			node->check_fs = 0;
 		} else {
 			log_group(ls, "check_fs nodeid %d needs fs notify",
@@ -2305,6 +2308,7 @@ int set_fs_notified(struct lockspace *ls, int nodeid)
 		return -EAGAIN;
 	}
 
+	log_group(ls, "set_fs_notified nodeid %d", nodeid);
 	node->fs_notified = 1;
 	return 0;
 }
