@@ -30,6 +30,7 @@
 #define OP_PLOCKS			7
 #define OP_LOCKDUMP			8
 #define OP_LOCKDEBUG			9
+#define OP_LOG_PLOCK			10
 
 static char *prog_name;
 static char *lsname;
@@ -173,7 +174,8 @@ static void print_usage(void)
 	printf("Usage:\n");
 	printf("\n");
 	printf("dlm_tool [options] [join | leave | lockdump | lockdebug |\n"
-	       "                    ls | dump | plocks | deadlock_check]\n");
+	       "                    ls | dump | log_plock | plocks |\n"
+	       "                    deadlock_check]\n");
 	printf("\n");
 	printf("Options:\n");
 	printf("  -n               Show all node information in ls\n");
@@ -322,6 +324,12 @@ static void decode_arguments(int argc, char **argv)
 			   (strlen(argv[optind]) == 6)) {
 			operation = OP_PLOCKS;
 			opt_ind = optind + 1;
+			break;
+		} else if (!strncmp(argv[optind], "log_plock", 9) &&
+			   (strlen(argv[optind]) == 9)) {
+			operation = OP_LOG_PLOCK;
+			opt_ind = optind + 1;
+			need_lsname = 0;
 			break;
 		}
 
@@ -1248,6 +1256,17 @@ static void do_dump(void)
 	do_write(STDOUT_FILENO, buf, strlen(buf));
 }
 
+static void do_log_plock(void)
+{
+	char buf[DLMC_DUMP_SIZE];
+
+	memset(buf, 0, sizeof(buf));
+
+	dlmc_dump_log_plock(buf);
+
+	do_write(STDOUT_FILENO, buf, strlen(buf));
+}
+
 int main(int argc, char **argv)
 {
 	prog_name = argv[0];
@@ -1278,6 +1297,10 @@ int main(int argc, char **argv)
 
 	case OP_DUMP:
 		do_dump();
+		break;
+
+	case OP_LOG_PLOCK:
+		do_log_plock();
 		break;
 
 	case OP_PLOCKS:

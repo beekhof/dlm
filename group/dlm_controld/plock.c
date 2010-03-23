@@ -261,7 +261,7 @@ static int find_resource(struct lockspace *ls, uint64_t number, int create,
 
 	r = malloc(sizeof(struct resource));
 	if (!r) {
-		log_error("find_resource no memory %d", errno);
+		log_plock_error(ls, "find_resource no memory %d", errno);
 		rv = -ENOMEM;
 		goto out;
 	}
@@ -749,7 +749,7 @@ static void save_message(struct lockspace *ls, struct dlm_header *hd, int len,
 	sm->len = len;
 	sm->nodeid = from;
 
-	log_group(ls, "save %s from %d len %d", msg_name(type), from, len);
+	log_plock(ls, "save %s from %d len %d", msg_name(type), from, len);
 
 	list_add_tail(&sm->list, &ls->saved_messages);
 }
@@ -770,7 +770,8 @@ static void __receive_plock(struct lockspace *ls, struct dlm_plock_info *in,
 		do_get(ls, in, r);
 		break;
 	default:
-		log_error("receive_plock from %d optype %d", from, in->optype);
+		log_plock_error(ls, "receive_plock error from %d optype %d",
+				from, in->optype);
 		if (from == our_nodeid)
 			write_result(ls, in, -EINVAL);
 	}
@@ -810,7 +811,7 @@ static void _receive_plock(struct lockspace *ls, struct dlm_header *hd, int len)
 	if (!(plock_recv_count % 1000)) {
 		gettimeofday(&now, NULL);
 		usec = dt_usec(&plock_recv_time, &now);
-		log_group(ls, "plock_recv_count %u time %.3f s",
+		log_plock(ls, "plock_recv_count %u time %.3f s",
 			  plock_recv_count, usec * 1.e-6);
 		plock_recv_time = now;
 	}
@@ -819,8 +820,8 @@ static void _receive_plock(struct lockspace *ls, struct dlm_header *hd, int len)
 		return;
 
 	if (from != hd->nodeid || from != info.nodeid) {
-		log_error("receive_plock from %d header %d info %d",
-			  from, hd->nodeid, info.nodeid);
+		log_plock_error(ls, "receive_plock error from %d header %d info %d",
+				from, hd->nodeid, info.nodeid);
 		return;
 	}
 
@@ -834,7 +835,7 @@ static void _receive_plock(struct lockspace *ls, struct dlm_header *hd, int len)
 		   who sent the plock, we need to send_own() and put it on the
 		   pending list to resend once the owner is established. */
 
-		log_debug("receive_plock from %d no r %llx", from,
+		log_plock(ls, "receive_plock from %d no r %llx", from,
 			  (unsigned long long)info.number);
 
 		if (from != our_nodeid)
@@ -851,8 +852,8 @@ static void _receive_plock(struct lockspace *ls, struct dlm_header *hd, int len)
 		/* r not found, rv is -ENOENT, this shouldn't happen because
 		   process_plocks() creates a resource for every op */
 
-		log_error("receive_plock from %d no r %llx %d", from,
-			  (unsigned long long)info.number, rv);
+		log_plock_error(ls, "receive_plock error from %d no r %llx %d",
+				from, (unsigned long long)info.number, rv);
 		return;
 	}
 
@@ -882,23 +883,21 @@ static void _receive_plock(struct lockspace *ls, struct dlm_header *hd, int len)
 		__receive_plock(ls, &info, from, r);
 
 	} else if (r->owner == -1) {
-		log_debug("receive_plock from %d r %llx owner %d", from,
+		log_plock(ls, "receive_plock from %d r %llx owner %d", from,
 			  (unsigned long long)info.number, r->owner);
 
 		if (from == our_nodeid)
 			save_pending_plock(ls, r, &info);
 
 	} else if (r->owner != our_nodeid) {
-		/* might happen, if frequent change to log_debug */
-		log_error("receive_plock from %d r %llx owner %d", from,
+		log_plock(ls, "receive_plock from %d r %llx owner %d", from,
 			  (unsigned long long)info.number, r->owner);
 
 		if (from == our_nodeid)
 			save_pending_plock(ls, r, &info);
 
 	} else if (r->owner == our_nodeid) {
-		/* might happen, if frequent change to log_debug */
-		log_error("receive_plock from %d r %llx owner %d", from,
+		log_plock(ls, "receive_plock from %d r %llx owner %d", from,
 			  (unsigned long long)info.number, r->owner);
 
 		if (from == our_nodeid)
@@ -943,7 +942,7 @@ static int send_struct_info(struct lockspace *ls, struct dlm_plock_info *in,
 	free(buf);
  out:
 	if (rv)
-		log_error("send_struct_info error %d", rv);
+		log_plock_error(ls, "send_struct_info error %d", rv);
 	return rv;
 }
 
@@ -961,7 +960,7 @@ static void send_own(struct lockspace *ls, struct resource *r, int owner)
 	   (pending list is not empty), then we shouldn't send another */
 
 	if (!list_empty(&r->pending)) {
-		log_debug("send_own %llx already pending",
+		log_plock(ls, "send_own %llx already pending",
 			  (unsigned long long)r->number);
 		return;
 	}
@@ -1030,7 +1029,7 @@ static void save_pending_plock(struct lockspace *ls, struct resource *r,
 
 	w = malloc(sizeof(struct lock_waiter));
 	if (!w) {
-		log_error("save_pending_plock no mem");
+		log_plock_error(ls, "save_pending_plock no mem");
 		return;
 	}
 	memcpy(&w->info, in, sizeof(struct dlm_plock_info));
@@ -1076,7 +1075,7 @@ static void _receive_own(struct lockspace *ls, struct dlm_header *hd, int len)
 	memcpy(&info, (char *)hd + sizeof(struct dlm_header), sizeof(info));
 	info_bswap_in(&info);
 
-	log_plock(ls, "receive own %llx from %u owner %u",
+	log_plock(ls, "receive_own %llx from %u owner %u",
 		  (unsigned long long)info.number, hd->nodeid, info.nodeid);
 
 	rv = find_resource(ls, info.number, 1, &r);
@@ -1179,9 +1178,10 @@ static void _receive_own(struct lockspace *ls, struct dlm_header *hd, int len)
 	}
 
 	if (should_not_happen) {
-		log_error("receive_own from %u %llx info nodeid %d r owner %d",
-			  from, (unsigned long long)r->number, info.nodeid,
-			  r->owner);
+		log_plock_error(ls, "receive_own error from %u %llx "
+				"info nodeid %d r owner %d",
+			  	from, (unsigned long long)r->number,
+				info.nodeid, r->owner);
 	}
 }
 
@@ -1195,7 +1195,8 @@ void receive_own(struct lockspace *ls, struct dlm_header *hd, int len)
 	_receive_own(ls, hd, len);
 }
 
-static void clear_syncing_flag(struct resource *r, struct dlm_plock_info *in)
+static void clear_syncing_flag(struct lockspace *ls, struct resource *r,
+			       struct dlm_plock_info *in)
 {
 	struct posix_lock *po;
 	struct lock_waiter *w;
@@ -1226,10 +1227,14 @@ static void clear_syncing_flag(struct resource *r, struct dlm_plock_info *in)
 		}
 	}
 
-	log_error("clear_syncing %llx no match %s %llx-%llx %d/%u/%llx",
-		  (unsigned long long)r->number, in->ex ? "WR" : "RD", 
-		  (unsigned long long)in->start, (unsigned long long)in->end,
-		  in->nodeid, in->pid, (unsigned long long)in->owner);
+	log_plock_error(ls, "clear_syncing error %llx no match %s %llx-%llx "
+			"%d/%u/%llx",
+			(unsigned long long)r->number,
+			in->ex ? "WR" : "RD", 
+			(unsigned long long)in->start,
+			(unsigned long long)in->end,
+			in->nodeid, in->pid,
+			(unsigned long long)in->owner);
 }
 
 static void _receive_sync(struct lockspace *ls, struct dlm_header *hd, int len)
@@ -1249,13 +1254,14 @@ static void _receive_sync(struct lockspace *ls, struct dlm_header *hd, int len)
 
 	rv = find_resource(ls, info.number, 0, &r);
 	if (rv) {
-		log_error("receive_sync no r %llx from %d", info.number, from);
+		log_plock_error(ls, "receive_sync error no r %llx from %d",
+				info.number, from);
 		return;
 	}
 
 	if (from == our_nodeid) {
 		/* this plock now in sync on all nodes */
-		clear_syncing_flag(r, &info);
+		clear_syncing_flag(ls, r, &info);
 		return;
 	}
 
@@ -1286,13 +1292,13 @@ static void _receive_drop(struct lockspace *ls, struct dlm_header *hd, int len)
 	memcpy(&info, (char *)hd + sizeof(struct dlm_header), sizeof(info));
 	info_bswap_in(&info);
 
-	log_plock(ls, "receive drop %llx from %u",
+	log_plock(ls, "receive_drop %llx from %u",
 		  (unsigned long long)info.number, from);
 
 	rv = find_resource(ls, info.number, 0, &r);
 	if (rv) {
 		/* we'll find no r if two nodes sent drop at once */
-		log_debug("receive_drop from %d no r %llx", from,
+		log_plock(ls, "receive_drop from %d no r %llx", from,
 			  (unsigned long long)info.number);
 		return;
 	}
@@ -1303,15 +1309,15 @@ static void _receive_drop(struct lockspace *ls, struct dlm_header *hd, int len)
 	   	   - A sent drop, B sent drop, receive drop A, A sent own,
 		     receive own A, receive drop B (this warning on all,
 		     owner A) */
-		log_debug("receive_drop from %d r %llx owner %d", from,
+		log_plock(ls, "receive_drop from %d r %llx owner %d", from,
 			  (unsigned long long)r->number, r->owner);
 		return;
 	}
 
 	if (!list_empty(&r->pending)) {
 		/* shouldn't happen */
-		log_error("receive_drop from %d r %llx pending op", from,
-			  (unsigned long long)r->number);
+		log_plock_error(ls, "receive_drop error from %d r %llx pending op",
+				from, (unsigned long long)r->number);
 		return;
 	}
 
@@ -1323,7 +1329,7 @@ static void _receive_drop(struct lockspace *ls, struct dlm_header *hd, int len)
 		free(r);
 	} else {
 		/* A sent drop, B sent a plock, receive plock, receive drop */
-		log_debug("receive_drop from %d r %llx in use", from,
+		log_plock(ls, "receive_drop from %d r %llx in use", from,
 			  (unsigned long long)r->number);
 	}
 }
@@ -1477,7 +1483,7 @@ void process_plocks(int ci)
 
 	ls = find_ls_id(info.fsid);
 	if (!ls) {
-		log_debug("process_plocks: no ls id %x", info.fsid);
+		log_plock(ls, "process_plocks: no ls id %x", info.fsid);
 		rv = -EEXIST;
 		goto fail;
 	}
@@ -1494,7 +1500,7 @@ void process_plocks(int ci)
 	plock_read_count++;
 	if (!(plock_read_count % 1000)) {
 		usec = dt_usec(&plock_read_time, &now) ;
-		log_group(ls, "plock_read_count %u time %.3f s delays %u",
+		log_plock(ls, "plock_read_count %u time %.3f s delays %u",
 			  plock_read_count, usec * 1.e-6, plock_rate_delays);
 		plock_read_time = now;
 		plock_rate_delays = 0;
@@ -1537,7 +1543,7 @@ void process_saved_plocks(struct lockspace *ls)
 	if (list_empty(&ls->saved_messages))
 		return;
 
-	log_group(ls, "process_saved_plocks");
+	log_plock(ls, "process_saved_plocks");
 
 	list_for_each_entry_safe(sm, sm2, &ls->saved_messages, list) {
 		hd = (struct dlm_header *)sm->buf;
@@ -1907,8 +1913,8 @@ void store_plocks(struct lockspace *ls)
 		else if (!r->owner)
 			owner = 0;
 		else {
-			log_error("store_plocks owner %d r %llx", r->owner,
-				  (unsigned long long)r->number);
+			log_plock_error(ls, "store_plocks error owner %d r %llx",
+					r->owner, (unsigned long long)r->number);
 			continue;
 		}
 
@@ -1926,7 +1932,7 @@ void store_plocks(struct lockspace *ls)
 
 		pack_section_buf(ls, r);
 
-		log_group(ls, "store_plocks: section size %u id %u \"%s\"",
+		log_plock(ls, "store_plocks: section size %u id %u \"%s\"",
 			  section_len, section_id.idLen, buf);
 
 	 create_retry:
@@ -2034,7 +2040,7 @@ void retrieve_plocks(struct lockspace *ls)
 		memset(&buf, 0, sizeof(buf));
 		snprintf(buf, SECTION_NAME_LEN, "%s", desc.sectionId.id);
 
-		log_group(ls, "retrieve_plocks: section size %llu id %u \"%s\"",
+		log_plock(ls, "retrieve_plocks: section size %llu id %u \"%s\"",
 			  (unsigned long long)iov.dataSize, iov.sectionId.idLen,
 			  buf);
 
@@ -2055,7 +2061,7 @@ void retrieve_plocks(struct lockspace *ls)
 		   no locks, which exist in ownership mode; the resource
 		   name and owner come from the section id */
 
-		log_group(ls, "retrieve_plocks: ckpt read %llu bytes",
+		log_plock(ls, "retrieve_plocks: ckpt read %llu bytes",
 			  (unsigned long long)iov.readSize);
 		section_len = iov.readSize;
 
@@ -2128,7 +2134,7 @@ void purge_plocks(struct lockspace *ls, int nodeid, int unmount)
 	if (purged)
 		ls->last_plock_time = time(NULL);
 
-	log_group(ls, "purged %d plocks for %d", purged, nodeid);
+	log_plock(ls, "purged %d plocks for %d", purged, nodeid);
 }
 
 int fill_plock_dump_buf(struct lockspace *ls)

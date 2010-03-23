@@ -66,6 +66,7 @@ struct dlmc_lockspace {
 #define DLMC_NODES_NEXT		3
 
 int dlmc_dump_debug(char *buf);
+int dlmc_dump_log_plock(char *buf);
 int dlmc_dump_plocks(char *name, char *buf);
 int dlmc_lockspace_info(char *lsname, struct dlmc_lockspace *ls);
 int dlmc_node_info(char *lsname, int nodeid, struct dlmc_node *node);

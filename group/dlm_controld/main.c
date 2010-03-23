@@ -436,6 +436,35 @@ static void query_dump_debug(int fd)
 	do_write(fd, dump_buf, len);
 }
 
+static void query_dump_log_plock(int fd)
+{
+	struct dlmc_header h;
+	int extra_len;
+	int len;
+
+	/* in the case of dump_wrap, extra_len will go in two writes,
+	   first the log tail, then the log head */
+	if (log_plock_wrap)
+		extra_len = DLMC_DUMP_SIZE;
+	else
+		extra_len = log_plock_point;
+
+	init_header(&h, DLMC_CMD_DUMP_LOG_PLOCK, NULL, 0, extra_len);
+	do_write(fd, &h, sizeof(h));
+
+	if (log_plock_wrap) {
+		len = DLMC_DUMP_SIZE - log_plock_point;
+		do_write(fd, log_plock_buf + log_plock_point, len);
+		len = log_plock_point;
+	} else
+		len = log_plock_point;
+
+	/* NUL terminate the debug string */
+	log_plock_buf[log_plock_point] = '\0';
+
+	do_write(fd, log_plock_buf, len);
+}
+
 static void query_dump_plocks(int fd, char *name)
 {
 	struct lockspace *ls;
@@ -775,6 +804,9 @@ static void *process_queries(void *arg)
 		switch (h.command) {
 		case DLMC_CMD_DUMP_DEBUG:
 			query_dump_debug(f);
+			break;
+		case DLMC_CMD_DUMP_LOG_PLOCK:
+			query_dump_log_plock(f);
 			break;
 		case DLMC_CMD_DUMP_PLOCKS:
 			query_dump_plocks(f, h.name);
@@ -1252,6 +1284,22 @@ void daemon_dump_save(void)
 	}
 }
 
+void log_plock_save(void)
+{
+	int len, i;
+
+	len = strlen(log_plock_line);
+
+	for (i = 0; i < len; i++) {
+		log_plock_buf[log_plock_point++] = log_plock_line[i];
+
+		if (log_plock_point == DLMC_DUMP_SIZE) {
+			log_plock_point = 0;
+			log_plock_wrap = 1;
+		}
+	}
+}
+
 int daemon_debug_opt;
 int daemon_quit;
 int cluster_down;
@@ -1265,16 +1313,20 @@ int plock_ci;
 struct list_head lockspaces;
 int cluster_quorate;
 int our_nodeid;
-char daemon_debug_buf[256];
-char dump_buf[DLMC_DUMP_SIZE];
-int dump_point;
-int dump_wrap;
 char plock_dump_buf[DLMC_DUMP_SIZE];
 int plock_dump_len;
 uint32_t control_minor;
 uint32_t monitor_minor;
 uint32_t plock_minor;
 uint32_t old_plock_minor;
+char daemon_debug_buf[256];
+char dump_buf[DLMC_DUMP_SIZE];
+int dump_point;
+int dump_wrap;
+char log_plock_line[256];
+char log_plock_buf[DLMC_DUMP_SIZE];
+int log_plock_point;
+int log_plock_wrap;
 
 /* was a config value set on command line?, 0 or 1.
    optk is a kernel option, optd is a daemon option */

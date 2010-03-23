@@ -82,10 +82,6 @@ extern int plock_ci;
 extern struct list_head lockspaces;
 extern int cluster_quorate;
 extern int our_nodeid;
-extern char daemon_debug_buf[256];
-extern char dump_buf[DLMC_DUMP_SIZE];
-extern int dump_point;
-extern int dump_wrap;
 extern char plock_dump_buf[DLMC_DUMP_SIZE];
 extern int plock_dump_len;
 extern uint32_t control_minor;
@@ -93,7 +89,20 @@ extern uint32_t monitor_minor;
 extern uint32_t plock_minor;
 extern uint32_t old_plock_minor;
 
+/* circular buffer of log_debug and log_error messages */
+extern char daemon_debug_buf[256];
+extern char dump_buf[DLMC_DUMP_SIZE];
+extern int dump_point;
+extern int dump_wrap;
+
+/* circular buffer of log_plock messages */
+extern char log_plock_line[256];
+extern char log_plock_buf[DLMC_DUMP_SIZE];
+extern int log_plock_point;
+extern int log_plock_wrap;
+
 void daemon_dump_save(void);
+void log_plock_save(void);
 
 #define log_level(lvl, fmt, args...) \
 do { \
@@ -119,10 +128,19 @@ do { \
 
 #define log_plock(ls, fmt, args...) \
 do { \
-	snprintf(daemon_debug_buf, 255, "%ld %s " fmt "\n", time(NULL), \
+	snprintf(log_plock_line, 255, "%ld %s " fmt "\n", time(NULL), \
 		 (ls)->name, ##args); \
+	log_plock_save(); \
 	if (daemon_debug_opt && cfgd_plock_debug) \
-		fprintf(stderr, "%s", daemon_debug_buf); \
+		fprintf(stderr, "%s", log_plock_line); \
+} while (0)
+
+#define log_plock_error(ls, fmt, args...) \
+do { \
+	log_level(LOG_ERR, fmt, ##args); \
+	snprintf(log_plock_line, 255, "%ld %s " fmt "\n", time(NULL), \
+		 (ls)->name, ##args); \
+	log_plock_save(); \
 } while (0)
 
 /* dlm_header types */
