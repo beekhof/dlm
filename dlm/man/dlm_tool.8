@@ -1,39 +1,98 @@
-.TH dlm_tool 8
+.TH DLM_TOOL 8 2009-01-20 cluster cluster
 
 .SH NAME
-dlm_tool - A program to join and leave lockspaces and display dlm information
+dlm_tool \- a utility for the dlm and dlm_controld daemon
 
 .SH SYNOPSIS
-.B
-dlm_tool
-[\fIOPTIONS\fR]
-<\fBjoin | leave | lockdump | deadlock_check\fP>
-<\fBname\fP>
+.B dlm_tool
+[COMMAND] [OPTIONS]
+[
+.I name
+]
 
 .SH DESCRIPTION
+.TP
+.B ls
+Display internal dlm_controld state about lockspaces.
 
-\fBdlm_tool\fP is a program used to join or leave dlm lockspaces, dump
-dlm lock state, and initiate deadlock detection cycles.  The name of a
-lockspace follows the subcommand.
+.TP
+.B dump
+Dump dlm_controld debug buffer.
+
+.TP
+.B log_plock
+Dump dlm_controld plock debug buffer.
+
+.TP
+.BI plocks " name"
+Dump posix locks from dlm_controld for the lockspace.
+
+.TP
+.BI lockdump " name"
+Minimal display of locks from the lockspace.
+
+.TP
+.BI lockdebug " name"
+Extended display of locks from the lockspace.
+
+.TP
+.BI join " name"
+Join a lockspace.
+
+.TP
+.BI leave " name"
+Leave a lockspace.
+
+.TP
+.BI deadlock_check " name"
+Start a deadlock detection cycle for the lockspace.
 
 .SH OPTIONS
 .TP
-\fB-m\fP
-The permission mode (in octal) of the lockspace device created by join;
-default 0600.
+.B \-n
+Show all node information in ls.
+
 .TP
-\fB-M\fP
+.BI \-d " num"
+Resource directory enabled (1) or disabled (0) during join. Default 0.
+
+.TP
+.BI \-e " num"
+Exclusive create off/on (0/1) in join. Default 0.
+
+.TP
+.BI \-f " num"
+FS memory allocation off/on (0/1) in join. Default 0.
+
+.TP
+.BI \-m " mode"
+The permission mode (in octal) of the lockspace device created by join.
+Default 0600.
+
+.TP
+.B \-M
 Dump MSTCPY locks in addition to locks held by local processes.
+
 .TP
-\fB-d\fP <num>
-Resource directory enabled (1) or disabled (0) during join; default 0.
+.B \-s
+Summary following lockdebug output (experimental, format may change).
+
 .TP
-\fB-h\fP
-Help.  Print out the usage syntax.
+.B \-v
+Verbose lockdebug output.
+
 .TP
-\fB-V\fP
-Print version information.
+.B \-w
+Wide lockdebug output.
+
+.TP
+.B \-h
+Print a help message describing available options, then exit.
+
+.TP
+.B \-V
+Print program version information, then exit.
 
 .SH SEE ALSO
-libdlm(3)
+.BR dlm_controld (8)
 
