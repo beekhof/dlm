@@ -1708,9 +1708,6 @@ static int _unlink_checkpoint(struct lockspace *ls, SaNameT *name)
 	h = (SaCkptCheckpointHandleT) ls->plock_ckpt_handle;
 	log_group(ls, "unlink ckpt %llx", (unsigned long long)h);
 
-	if (!h)
-		return ret;
-
  unlink_retry:
 	rv = saCkptCheckpointUnlink(system_ckpt_handle, name);
 	if (rv == SA_AIS_ERR_TRY_AGAIN) {
@@ -1732,7 +1729,7 @@ static int _unlink_checkpoint(struct lockspace *ls, SaNameT *name)
 		goto status_retry;
 	}
 	if (rv != SA_AIS_OK) {
-		log_error("unlink ckpt status error %d %s", rv, ls->name);
+		log_group(ls, "unlink ckpt status error %d %s", rv, ls->name);
 		goto out_close;
 	}
 
