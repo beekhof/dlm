@@ -1072,6 +1072,8 @@ static void _receive_own(struct lockspace *ls, struct dlm_header *hd, int len)
 	int from = hd->nodeid;
 	int rv;
 
+	ls->last_plock_time = time(NULL);
+
 	memcpy(&info, (char *)hd + sizeof(struct dlm_header), sizeof(info));
 	info_bswap_in(&info);
 
@@ -1244,6 +1246,8 @@ static void _receive_sync(struct lockspace *ls, struct dlm_header *hd, int len)
 	int from = hd->nodeid;
 	int rv;
 
+	ls->last_plock_time = time(NULL);
+
 	memcpy(&info, (char *)hd + sizeof(struct dlm_header), sizeof(info));
 	info_bswap_in(&info);
 
@@ -1288,6 +1292,8 @@ static void _receive_drop(struct lockspace *ls, struct dlm_header *hd, int len)
 	struct resource *r;
 	int from = hd->nodeid;
 	int rv;
+
+	ls->last_plock_time = time(NULL);
 
 	memcpy(&info, (char *)hd + sizeof(struct dlm_header), sizeof(info));
 	info_bswap_in(&info);
