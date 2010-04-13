@@ -1595,26 +1595,32 @@ static void deliver_cb(cpg_handle_t handle,
 		break;
 
 	case DLM_MSG_PLOCK:
+		if (ls->disable_plock)
+			break;
 		if (cfgd_enable_plock)
 			receive_plock(ls, hd, len);
-		else if (!ls->disable_plock)
+		else
 			log_error("msg %d nodeid %d enable_plock %d",
 				  hd->type, nodeid, cfgd_enable_plock);
 		break;
 
 	case DLM_MSG_PLOCK_OWN:
+		if (ls->disable_plock)
+			break;
 		if (cfgd_enable_plock && cfgd_plock_ownership)
 			receive_own(ls, hd, len);
-		else if (!ls->disable_plock)
+		else
 			log_error("msg %d nodeid %d enable_plock %d owner %d",
 				  hd->type, nodeid, cfgd_enable_plock,
 				  cfgd_plock_ownership);
 		break;
 
 	case DLM_MSG_PLOCK_DROP:
+		if (ls->disable_plock)
+			break;
 		if (cfgd_enable_plock && cfgd_plock_ownership)
 			receive_drop(ls, hd, len);
-		else if (!ls->disable_plock)
+		else
 			log_error("msg %d nodeid %d enable_plock %d owner %d",
 				  hd->type, nodeid, cfgd_enable_plock,
 				  cfgd_plock_ownership);
@@ -1622,18 +1628,22 @@ static void deliver_cb(cpg_handle_t handle,
 
 	case DLM_MSG_PLOCK_SYNC_LOCK:
 	case DLM_MSG_PLOCK_SYNC_WAITER:
+		if (ls->disable_plock)
+			break;
 		if (cfgd_enable_plock && cfgd_plock_ownership)
 			receive_sync(ls, hd, len);
-		else if (!ls->disable_plock)
+		else
 			log_error("msg %d nodeid %d enable_plock %d owner %d",
 				  hd->type, nodeid, cfgd_enable_plock,
 				  cfgd_plock_ownership);
 		break;
 
 	case DLM_MSG_PLOCKS_STORED:
+		if (ls->disable_plock)
+			break;
 		if (cfgd_enable_plock)
 			receive_plocks_stored(ls, hd, len);
-		else if (!ls->disable_plock)
+		else
 			log_error("msg %d nodeid %d enable_plock %d",
 				  hd->type, nodeid, cfgd_enable_plock);
 		break;
