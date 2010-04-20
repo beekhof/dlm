@@ -1488,6 +1488,11 @@ void process_plocks(int ci)
 		goto fail;
 	}
 
+	if (ls->disable_plock) {
+		rv = -ENOSYS;
+		goto fail;
+	}
+
 	log_plock(ls, "read plock %llx %s %s %llx-%llx %d/%u/%llx w %d",
 		  (unsigned long long)info.number,
 		  op_str(info.optype),
@@ -1620,7 +1625,8 @@ static void pack_section_buf(struct lockspace *ls, struct resource *r)
 	section_len = count * sizeof(struct pack_plock);
 }
 
-static int unpack_section_buf(struct lockspace *ls, char *numbuf, int buflen)
+static int unpack_section_buf(struct lockspace *ls, char *numbuf, int buflen,
+			      uint64_t *r_num, int *lock_count)
 {
 	struct pack_plock *pp;
 	struct posix_lock *po;
@@ -1646,6 +1652,8 @@ static int unpack_section_buf(struct lockspace *ls, char *numbuf, int buflen)
 	r->number = num;
 	r->owner = owner;
 	r->last_access = now;
+
+	*r_num = num;
 
 	pp = (struct pack_plock *) &section_buf;
 
@@ -1675,6 +1683,7 @@ static int unpack_section_buf(struct lockspace *ls, char *numbuf, int buflen)
 	}
 
 	list_add_tail(&r->list, &ls->plock_resources);
+	*lock_count = count;
 	return 0;
 }
 
@@ -1797,7 +1806,7 @@ void close_plock_checkpoint(struct lockspace *ls)
    it.  The ckpt should then disappear and the new node can create a new ckpt
    for the next mounter. */
 
-void store_plocks(struct lockspace *ls)
+void store_plocks(struct lockspace *ls, uint32_t *sig)
 {
 	SaCkptCheckpointCreationAttributesT attr;
 	SaCkptCheckpointHandleT h;
@@ -1810,15 +1819,21 @@ void store_plocks(struct lockspace *ls)
 	struct resource *r;
 	struct posix_lock *po;
 	struct lock_waiter *w;
-	int r_count, lock_count, total_size, section_size, max_section_size;
+	int total_size, section_size, max_section_size;
 	int len, owner;
+	uint32_t r_count = 0, p_count = 0;
+	uint64_t r_num_first = 0, r_num_last = 0;
 
-	if (!cfgd_enable_plock)
+	if (!cfgd_enable_plock || ls->disable_plock)
 		return;
 
 	/* no change to plock state since we created the last checkpoint */
 	if (ls->last_checkpoint_time > ls->last_plock_time) {
-		log_group(ls, "store_plocks: saved ckpt uptodate");
+		log_group(ls, "store_plocks saved ckpt uptodate");
+		r_num_first = ls->checkpoint_r_num_first;
+		r_num_last = ls->checkpoint_r_num_last;
+		r_count = ls->checkpoint_r_count;
+		p_count = ls->checkpoint_p_count;
 		goto out;
 	}
 	ls->last_checkpoint_time = time(NULL);
@@ -1833,7 +1848,7 @@ void store_plocks(struct lockspace *ls)
 	   the attr fields */
 
 	r_count = 0;
-	lock_count = 0;
+	p_count = 0;
 	total_size = 0;
 	max_section_size = 0;
 
@@ -1845,22 +1860,23 @@ void store_plocks(struct lockspace *ls)
 		section_size = 0;
 		list_for_each_entry(po, &r->locks, list) {
 			section_size += sizeof(struct pack_plock);
-			lock_count++;
+			p_count++;
 		}
 		list_for_each_entry(w, &r->waiters, list) {
 			section_size += sizeof(struct pack_plock);
-			lock_count++;
+			p_count++;
 		}
 		total_size += section_size;
 		if (section_size > max_section_size)
 			max_section_size = section_size;
 	}
 
-	log_group(ls, "store_plocks: r_count %d, lock_count %d, pp %u bytes",
-		  r_count, lock_count, (unsigned int)sizeof(struct pack_plock));
-
-	log_group(ls, "store_plocks: total %d bytes, max_section %d bytes",
-		  total_size, max_section_size);
+	log_group(ls, "store_plocks r_count %u p_count %u "
+		  "total_size %d max_section_size %d",
+		  r_count, p_count, total_size, max_section_size);
+	log_plock(ls, "store_plocks r_count %u p_count %u "
+		  "total_size %d max_section_size %d",
+		  r_count, p_count, total_size, max_section_size);
 
 	attr.creationFlags = SA_CKPT_WR_ALL_REPLICAS;
 	attr.checkpointSize = total_size;
@@ -1876,20 +1892,20 @@ void store_plocks(struct lockspace *ls)
  open_retry:
 	rv = saCkptCheckpointOpen(system_ckpt_handle, &name,&attr,flags,0,&h);
 	if (rv == SA_AIS_ERR_TRY_AGAIN) {
-		log_group(ls, "store_plocks: ckpt open retry");
+		log_group(ls, "store_plocks ckpt open retry");
 		sleep(1);
 		goto open_retry;
 	}
 	if (rv == SA_AIS_ERR_EXIST) {
-		log_group(ls, "store_plocks: ckpt already exists");
+		log_group(ls, "store_plocks ckpt already exists");
 		return;
 	}
 	if (rv != SA_AIS_OK) {
-		log_error("store_plocks: ckpt open error %d %s", rv, ls->name);
+		log_error("store_plocks ckpt open error %d %s", rv, ls->name);
 		return;
 	}
 
-	log_group(ls, "store_plocks: open ckpt handle %llx",
+	log_group(ls, "store_plocks open ckpt handle %llx",
 		  (unsigned long long)h);
 	ls->plock_ckpt_handle = (uint64_t) h;
 
@@ -1934,20 +1950,24 @@ void store_plocks(struct lockspace *ls)
 
 		pack_section_buf(ls, r);
 
-		log_plock(ls, "store_plocks: section size %u id %u \"%s\"",
+		if (!r_num_first)
+			r_num_first = r->number;
+		r_num_last = r->number;
+
+		log_plock(ls, "store_plocks section size %u id %u \"%s\"",
 			  section_len, section_id.idLen, buf);
 
 	 create_retry:
 		rv = saCkptSectionCreate(h, &section_attr, &section_buf,
 					 section_len);
 		if (rv == SA_AIS_ERR_TRY_AGAIN) {
-			log_group(ls, "store_plocks: ckpt create retry");
+			log_group(ls, "store_plocks ckpt create retry");
 			sleep(1);
 			goto create_retry;
 		}
 		if (rv == SA_AIS_ERR_EXIST) {
 			/* this shouldn't happen in general */
-			log_group(ls, "store_plocks: clearing old ckpt");
+			log_group(ls, "store_plocks clearing old ckpt");
 			/* do we need this close or will the close in
 			   the unlink function be ok? */
 			saCkptCheckpointClose(h);
@@ -1955,19 +1975,36 @@ void store_plocks(struct lockspace *ls)
 			goto open_retry;
 		}
 		if (rv != SA_AIS_OK) {
-			log_error("store_plocks: ckpt section create err %d %s",
+			log_error("store_plocks ckpt section create err %d %s",
 				  rv, ls->name);
 			break;
 		}
 	}
  out:
-	return;
+	*sig = (0xFFFFFFFF & r_num_first) ^ (0xFFFFFFFF & r_num_last) ^
+	       r_count ^ p_count;
+
+	log_group(ls, "store_plocks first %llu last %llu r_count %u "
+		  "p_count %u sig %x",
+		  (unsigned long long)r_num_first,
+		  (unsigned long long)r_num_last,
+		  r_count, p_count, *sig);
+	log_plock(ls, "store_plocks first %llu last %llu r_count %u "
+		  "p_count %u sig %x",
+		  (unsigned long long)r_num_first,
+		  (unsigned long long)r_num_last,
+		  r_count, p_count, *sig);
+
+	ls->checkpoint_r_num_first = r_num_first;
+	ls->checkpoint_r_num_last = r_num_last;
+	ls->checkpoint_r_count = r_count;
+	ls->checkpoint_p_count = p_count;
 }
 
 /* called by a node that's just been added to the group to get existing plock
    state */
 
-void retrieve_plocks(struct lockspace *ls)
+void retrieve_plocks(struct lockspace *ls, uint32_t *sig)
 {
 	SaCkptCheckpointHandleT h;
 	SaCkptSectionIterationHandleT itr;
@@ -1976,9 +2013,11 @@ void retrieve_plocks(struct lockspace *ls)
 	SaNameT name;
 	SaAisErrorT rv;
 	char buf[SECTION_NAME_LEN];
-	int len;
+	int len, lock_count;
+	uint32_t r_count = 0, p_count = 0;
+	uint64_t r_num, r_num_first = 0, r_num_last = 0;
 
-	if (!cfgd_enable_plock)
+	if (!cfgd_enable_plock || ls->disable_plock)
 		return;
 
 	log_group(ls, "retrieve_plocks");
@@ -1991,12 +2030,12 @@ void retrieve_plocks(struct lockspace *ls)
 	rv = saCkptCheckpointOpen(system_ckpt_handle, &name, NULL,
 				  SA_CKPT_CHECKPOINT_READ, 0, &h);
 	if (rv == SA_AIS_ERR_TRY_AGAIN) {
-		log_group(ls, "retrieve_plocks: ckpt open retry");
+		log_group(ls, "retrieve_plocks ckpt open retry");
 		sleep(1);
 		goto open_retry;
 	}
 	if (rv != SA_AIS_OK) {
-		log_error("retrieve_plocks: ckpt open error %d %s",
+		log_error("retrieve_plocks ckpt open error %d %s",
 			  rv, ls->name);
 		return;
 	}
@@ -2004,12 +2043,12 @@ void retrieve_plocks(struct lockspace *ls)
  init_retry:
 	rv = saCkptSectionIterationInitialize(h, SA_CKPT_SECTIONS_ANY, 0, &itr);
 	if (rv == SA_AIS_ERR_TRY_AGAIN) {
-		log_group(ls, "retrieve_plocks: ckpt iterinit retry");
+		log_group(ls, "retrieve_plocks ckpt iterinit retry");
 		sleep(1);
 		goto init_retry;
 	}
 	if (rv != SA_AIS_OK) {
-		log_error("retrieve_plocks: ckpt iterinit error %d %s",
+		log_error("retrieve_plocks ckpt iterinit error %d %s",
 			  rv, ls->name);
 		goto out;
 	}
@@ -2020,12 +2059,12 @@ void retrieve_plocks(struct lockspace *ls)
 		if (rv == SA_AIS_ERR_NO_SECTIONS)
 			break;
 		if (rv == SA_AIS_ERR_TRY_AGAIN) {
-			log_group(ls, "retrieve_plocks: ckpt iternext retry");
+			log_group(ls, "retrieve_plocks ckpt iternext retry");
 			sleep(1);
 			goto next_retry;
 		}
 		if (rv != SA_AIS_OK) {
-			log_error("retrieve_plocks: ckpt iternext error %d %s",
+			log_error("retrieve_plocks ckpt iternext error %d %s",
 				  rv, ls->name);
 			goto out_it;
 		}
@@ -2042,19 +2081,19 @@ void retrieve_plocks(struct lockspace *ls)
 		memset(&buf, 0, sizeof(buf));
 		snprintf(buf, SECTION_NAME_LEN, "%s", desc.sectionId.id);
 
-		log_plock(ls, "retrieve_plocks: section size %llu id %u \"%s\"",
+		log_plock(ls, "retrieve_plocks section size %llu id %u \"%s\"",
 			  (unsigned long long)iov.dataSize, iov.sectionId.idLen,
 			  buf);
 
 	 read_retry:
 		rv = saCkptCheckpointRead(h, &iov, 1, NULL);
 		if (rv == SA_AIS_ERR_TRY_AGAIN) {
-			log_group(ls, "retrieve_plocks: ckpt read retry");
+			log_group(ls, "retrieve_plocks ckpt read retry");
 			sleep(1);
 			goto read_retry;
 		}
 		if (rv != SA_AIS_OK) {
-			log_error("retrieve_plocks: ckpt read error %d %s",
+			log_error("retrieve_plocks ckpt read error %d %s",
 				  rv, ls->name);
 			goto out_it;
 		}
@@ -2063,24 +2102,47 @@ void retrieve_plocks(struct lockspace *ls)
 		   no locks, which exist in ownership mode; the resource
 		   name and owner come from the section id */
 
-		log_plock(ls, "retrieve_plocks: ckpt read %llu bytes",
+		log_plock(ls, "retrieve_plocks ckpt read %llu bytes",
 			  (unsigned long long)iov.readSize);
 		section_len = iov.readSize;
 
 		if (section_len % sizeof(struct pack_plock)) {
-			log_error("retrieve_plocks: bad section len %d %s",
+			log_error("retrieve_plocks bad section len %d %s",
 				  section_len, ls->name);
 			continue;
 		}
 
+		r_num = 0;
+		lock_count = 0;
+
 		unpack_section_buf(ls, (char *)desc.sectionId.id,
-				   desc.sectionId.idLen);
+				   desc.sectionId.idLen, &r_num, &lock_count);
+		r_count++;
+		p_count += lock_count;
+
+		if (!r_num_first)
+			r_num_first = r_num;
+		r_num_last = r_num;
 	}
 
  out_it:
 	saCkptSectionIterationFinalize(itr);
  out:
 	saCkptCheckpointClose(h);
+
+	*sig = (0xFFFFFFFF & r_num_first) ^ (0xFFFFFFFF & r_num_last)
+	       ^ r_count ^ p_count;
+
+	log_group(ls, "retrieve_plocks first %llu last %llu r_count %u "
+		  "p_count %u sig %x",
+		  (unsigned long long)r_num_first,
+		  (unsigned long long)r_num_last,
+		  r_count, p_count, *sig);
+	log_plock(ls, "retrieve_plocks first %llu last %llu r_count %u "
+		  "p_count %u sig %x",
+		  (unsigned long long)r_num_first,
+		  (unsigned long long)r_num_last,
+		  r_count, p_count, *sig);
 }
 
 /* Called when a node has failed, or we're unmounting.  For a node failure, we
@@ -2094,7 +2156,7 @@ void purge_plocks(struct lockspace *ls, int nodeid, int unmount)
 	struct resource *r, *r2;
 	int purged = 0;
 
-	if (!cfgd_enable_plock)
+	if (!cfgd_enable_plock || ls->disable_plock)
 		return;
 
 	list_for_each_entry_safe(r, r2, &ls->plock_resources, list) {

@@ -263,6 +263,7 @@ void dlm_send_message(struct lockspace *ls, char *buf, int len)
 	hd->global_id   = cpu_to_le32(ls->global_id);
 	hd->flags       = cpu_to_le32(hd->flags);
 	hd->msgdata     = cpu_to_le32(hd->msgdata);
+	hd->msgdata2    = cpu_to_le32(hd->msgdata2);
 
 	_send_message(ls->cpg_handle, buf, len, type);
 }
@@ -1081,9 +1082,11 @@ static void receive_plocks_stored(struct lockspace *ls, struct dlm_header *hd,
 {
 	struct ls_info *li;
 	struct id_info *ids;
+	uint32_t sig;
 
-	log_group(ls, "receive_plocks_stored %d:%u need_plocks %d",
-		  hd->nodeid, hd->msgdata, ls->need_plocks);
+	log_group(ls, "receive_plocks_stored %d:%u flags %x sig %x "
+		  "need_plocks %d", hd->nodeid, hd->msgdata, hd->flags,
+		  hd->msgdata2, ls->need_plocks);
 
 	if (!ls->need_plocks)
 		return;
@@ -1109,14 +1112,25 @@ static void receive_plocks_stored(struct lockspace *ls, struct dlm_header *hd,
 		return;
 	}
 
-	retrieve_plocks(ls);
+	retrieve_plocks(ls, &sig);
+
+	if ((hd->flags & DLM_MFLG_PLOCK_SIG) && (sig != hd->msgdata2)) {
+		log_error("lockspace %s plock disabled our sig %x "
+			  "nodeid %d sig %x", ls->name, sig, hd->nodeid,
+			  hd->msgdata2);
+		ls->disable_plock = 1;
+		ls->need_plocks = 1; /* don't set HAVEPLOCK */
+		ls->save_plocks = 0;
+		return;
+	}
+
 	process_saved_plocks(ls);
 	ls->need_plocks = 0;
 	ls->save_plocks = 0;
 }
 
 static void send_info(struct lockspace *ls, struct change *cg, int type,
-		      uint32_t flags)
+		      uint32_t flags, uint32_t msgdata2)
 {
 	struct dlm_header *hd;
 	struct ls_info *li;
@@ -1146,6 +1160,7 @@ static void send_info(struct lockspace *ls, struct change *cg, int type,
 	hd->type = type;
 	hd->msgdata = cg->seq;
 	hd->flags = flags;
+	hd->msgdata2 = msgdata2;
 
 	if (ls->joining)
 		hd->flags |= DLM_MFLG_JOINING;
@@ -1170,10 +1185,11 @@ static void send_info(struct lockspace *ls, struct change *cg, int type,
 		id++;
 	}
 
-	log_group(ls, "send_%s cg %u flags %x counts %u %d %d %d %d",
+	log_group(ls, "send_%s cg %u flags %x data2 %x counts %u %d %d %d %d",
 		  type == DLM_MSG_START ? "start" : "plocks_stored",
-		  cg->seq, hd->flags, ls->started_count, cg->member_count,
-		  cg->joined_count, cg->remove_count, cg->failed_count);
+		  cg->seq, hd->flags, hd->msgdata2, ls->started_count,
+		  cg->member_count, cg->joined_count, cg->remove_count,
+		  cg->failed_count);
 
 	dlm_send_message(ls, buf, len);
 
@@ -1184,14 +1200,14 @@ static void send_start(struct lockspace *ls)
 {
 	struct change *cg = list_first_entry(&ls->changes, struct change, list);
 
-	send_info(ls, cg, DLM_MSG_START, 0);
+	send_info(ls, cg, DLM_MSG_START, 0, 0);
 }
 
-static void send_plocks_stored(struct lockspace *ls)
+static void send_plocks_stored(struct lockspace *ls, uint32_t sig)
 {
 	struct change *cg = list_first_entry(&ls->changes, struct change, list);
 
-	send_info(ls, cg, DLM_MSG_PLOCKS_STORED, 0);
+	send_info(ls, cg, DLM_MSG_PLOCKS_STORED, DLM_MFLG_PLOCK_SIG, sig);
 }
 
 static int same_members(struct change *cg1, struct change *cg2)
@@ -1218,7 +1234,7 @@ static void send_nacks(struct lockspace *ls, struct change *startcg)
 		    same_members(cg, startcg)) {
 			log_group(ls, "send nack old cg %u new cg %u",
 				   cg->seq, startcg->seq);
-			send_info(ls, cg, DLM_MSG_START, DLM_MFLG_NACK);
+			send_info(ls, cg, DLM_MSG_START, DLM_MFLG_NACK, 0);
 		}
 	}
 }
@@ -1238,8 +1254,9 @@ static void prepare_plocks(struct lockspace *ls)
 {
 	struct change *cg = list_first_entry(&ls->changes, struct change, list);
 	struct member *memb;
+	uint32_t sig;
 
-	if (!cfgd_enable_plock)
+	if (!cfgd_enable_plock || ls->disable_plock)
 		return;
 
 	/* if we're the only node in the lockspace, then we are the ckpt_node
@@ -1297,8 +1314,8 @@ static void prepare_plocks(struct lockspace *ls)
 	   previous ckpt_node upon receiving the stored message from us. */
 
 	if (nodes_added(ls))
-		store_plocks(ls);
-	send_plocks_stored(ls);
+		store_plocks(ls, &sig);
+	send_plocks_stored(ls, sig);
 }
 
 static void apply_changes(struct lockspace *ls)
@@ -1532,6 +1549,7 @@ static void dlm_header_in(struct dlm_header *hd)
 	hd->global_id   = le32_to_cpu(hd->global_id);
 	hd->flags       = le32_to_cpu(hd->flags);
 	hd->msgdata     = le32_to_cpu(hd->msgdata);
+	hd->msgdata2    = le32_to_cpu(hd->msgdata2);
 }
 
 static void deliver_cb(cpg_handle_t handle,
@@ -1579,7 +1597,7 @@ static void deliver_cb(cpg_handle_t handle,
 	case DLM_MSG_PLOCK:
 		if (cfgd_enable_plock)
 			receive_plock(ls, hd, len);
-		else
+		else if (!ls->disable_plock)
 			log_error("msg %d nodeid %d enable_plock %d",
 				  hd->type, nodeid, cfgd_enable_plock);
 		break;
@@ -1587,7 +1605,7 @@ static void deliver_cb(cpg_handle_t handle,
 	case DLM_MSG_PLOCK_OWN:
 		if (cfgd_enable_plock && cfgd_plock_ownership)
 			receive_own(ls, hd, len);
-		else
+		else if (!ls->disable_plock)
 			log_error("msg %d nodeid %d enable_plock %d owner %d",
 				  hd->type, nodeid, cfgd_enable_plock,
 				  cfgd_plock_ownership);
@@ -1596,7 +1614,7 @@ static void deliver_cb(cpg_handle_t handle,
 	case DLM_MSG_PLOCK_DROP:
 		if (cfgd_enable_plock && cfgd_plock_ownership)
 			receive_drop(ls, hd, len);
-		else
+		else if (!ls->disable_plock)
 			log_error("msg %d nodeid %d enable_plock %d owner %d",
 				  hd->type, nodeid, cfgd_enable_plock,
 				  cfgd_plock_ownership);
@@ -1606,7 +1624,7 @@ static void deliver_cb(cpg_handle_t handle,
 	case DLM_MSG_PLOCK_SYNC_WAITER:
 		if (cfgd_enable_plock && cfgd_plock_ownership)
 			receive_sync(ls, hd, len);
-		else
+		else if (!ls->disable_plock)
 			log_error("msg %d nodeid %d enable_plock %d owner %d",
 				  hd->type, nodeid, cfgd_enable_plock,
 				  cfgd_plock_ownership);
@@ -1615,7 +1633,7 @@ static void deliver_cb(cpg_handle_t handle,
 	case DLM_MSG_PLOCKS_STORED:
 		if (cfgd_enable_plock)
 			receive_plocks_stored(ls, hd, len);
-		else
+		else if (!ls->disable_plock)
 			log_error("msg %d nodeid %d enable_plock %d",
 				  hd->type, nodeid, cfgd_enable_plock);
 		break;

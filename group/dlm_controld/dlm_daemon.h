@@ -164,6 +164,7 @@ enum {
 #define DLM_MFLG_HAVEPLOCK 2  /* accompanies start, we have plock state */
 #define DLM_MFLG_NACK      4  /* accompanies start, prevent wrong match when
 				 two outstanding changes are the same */
+#define DLM_MFLG_PLOCK_SIG 8  /* msgdata2 is a plock signature */
 
 struct dlm_header {
 	uint16_t version[3];
@@ -174,8 +175,8 @@ struct dlm_header {
 	uint32_t flags;		/* DLM_MFLG_ */
 	uint32_t msgdata;       /* in-header payload depends on MSG type; lkid
 				   for deadlock, seq for lockspace membership */
-	uint32_t pad1;
-	uint64_t pad2;
+	uint32_t msgdata2;	/* second MSG-specific data */
+	uint64_t pad;
 };
 
 struct lockspace {
@@ -203,6 +204,7 @@ struct lockspace {
 	int			plock_ckpt_node;
 	int			need_plocks;
 	int			save_plocks;
+	int			disable_plock;
 	uint32_t		associated_mg_id;
 	struct list_head	saved_messages;
 	struct list_head	plock_resources;
@@ -210,6 +212,10 @@ struct lockspace {
 	time_t			last_plock_time;
 	struct timeval		drop_resources_last;
 	uint64_t		plock_ckpt_handle;
+	uint64_t		checkpoint_r_num_first;
+	uint64_t		checkpoint_r_num_last;
+	uint32_t		checkpoint_r_count;
+	uint32_t		checkpoint_p_count;
 
 	/* deadlock stuff */
 
@@ -326,8 +332,8 @@ void receive_sync(struct lockspace *ls, struct dlm_header *hd, int len);
 void receive_drop(struct lockspace *ls, struct dlm_header *hd, int len);
 void process_saved_plocks(struct lockspace *ls);
 void close_plock_checkpoint(struct lockspace *ls);
-void store_plocks(struct lockspace *ls);
-void retrieve_plocks(struct lockspace *ls);
+void store_plocks(struct lockspace *ls, uint32_t *sig);
+void retrieve_plocks(struct lockspace *ls, uint32_t *sig);
 void purge_plocks(struct lockspace *ls, int nodeid, int unmount);
 int fill_plock_dump_buf(struct lockspace *ls);
 
