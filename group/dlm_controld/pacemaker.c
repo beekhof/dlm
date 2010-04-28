@@ -128,7 +128,7 @@ void dlm_process_node(gpointer key, gpointer value, gpointer user_data)
     } else if(rc == 0) {
 	do_remove = TRUE;
 
-    } else if(is_active) {
+    } else if(is_active && node->addr) {
 	do_add = TRUE;
     }
 
