@@ -45,6 +45,7 @@ struct node {
 	int check_fs;
 	int fs_notified;
 	uint64_t add_time;
+	uint64_t fail_time;
 	uint64_t fence_time;	/* for debug */
 	uint64_t cluster_add_time;
 	uint64_t cluster_remove_time;
@@ -356,12 +357,13 @@ static void free_ls(struct lockspace *ls)
    has failed yet).
 
    So, check that:
-   1. has fenced fenced the node after it joined this lockspace?
+   1. has fenced fenced the node since we saw it fail?
    2. fenced has no outstanding fencing ops
 
    For 1:
-   - record the time of the first good start message we see from node X
    - node X fails
+   - we see node X fail and X has non-zero add_time,
+     set check_fencing and record the fail time
    - wait for X to be removed from all dlm cpg's  (probably not necessary)
    - check that the fencing time is later than the recorded time above
 
@@ -499,6 +501,7 @@ static void node_history_fail(struct lockspace *ls, int nodeid,
 		node->check_fencing = 1;
 		node->fence_time = 0;
 		node->fence_queries = 0;
+		node->fail_time = time(NULL);
 	}
 
 	/* fenced will take care of making sure the quorum value
@@ -539,10 +542,12 @@ static int check_fencing_done(struct lockspace *ls)
 		if (rv < 0)
 			log_error("fenced_node_info error %d", rv);
 
-		if (last_fenced_time > node->add_time) {
-			log_group(ls, "check_fencing %d %llu fenced at %llu",
+		if (last_fenced_time > node->fail_time) {
+			log_group(ls, "check_fencing %d done "
+				  "add %llu fail %llu last %llu",
 				  node->nodeid,
 				  (unsigned long long)node->add_time,
+				  (unsigned long long)node->fail_time,
 				  (unsigned long long)last_fenced_time);
 			node->check_fencing = 0;
 			node->add_time = 0;
@@ -550,9 +555,11 @@ static int check_fencing_done(struct lockspace *ls)
 		} else {
 			if (!node->fence_queries ||
 			    node->fence_time != last_fenced_time) {
-				log_group(ls, "check_fencing %d not fenced "
-					  "add %llu fence %llu", node->nodeid,
+				log_group(ls, "check_fencing %d wait "
+					  "add %llu fail %llu last %llu",
+					  node->nodeid,
 					 (unsigned long long)node->add_time,
+					 (unsigned long long)node->fail_time,
 					 (unsigned long long)last_fenced_time);
 				node->fence_queries++;
 				node->fence_time = last_fenced_time;
