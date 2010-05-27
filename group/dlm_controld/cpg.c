@@ -542,7 +542,11 @@ static int check_fencing_done(struct lockspace *ls)
 		if (rv < 0)
 			log_error("fenced_node_info error %d", rv);
 
-		if (last_fenced_time > node->fail_time) {
+		/* need >= not just > because in at least one case
+		   we've seen fenced_time within the same second as
+		   fail_time: with external fencing, e.g. fence_node */
+
+		if (last_fenced_time >= node->fail_time) {
 			log_group(ls, "check_fencing %d done "
 				  "add %llu fail %llu last %llu",
 				  node->nodeid,
