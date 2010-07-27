@@ -1984,8 +1984,7 @@ void store_plocks(struct lockspace *ls, uint32_t *sig)
 		}
 	}
  out:
-	*sig = (0xFFFFFFFF & r_num_first) ^ (0xFFFFFFFF & r_num_last) ^
-	       r_count ^ p_count;
+	*sig = (0xFFFFFFFF & r_num_first) ^ (0xFFFFFFFF & r_num_last) ^ r_count;
 
 	log_group(ls, "store_plocks first %llu last %llu r_count %u "
 		  "p_count %u sig %x",
@@ -2133,8 +2132,7 @@ void retrieve_plocks(struct lockspace *ls, uint32_t *sig)
  out:
 	saCkptCheckpointClose(h);
 
-	*sig = (0xFFFFFFFF & r_num_first) ^ (0xFFFFFFFF & r_num_last)
-	       ^ r_count ^ p_count;
+	*sig = (0xFFFFFFFF & r_num_first) ^ (0xFFFFFFFF & r_num_last) ^ r_count;
 
 	log_group(ls, "retrieve_plocks first %llu last %llu r_count %u "
 		  "p_count %u sig %x",
