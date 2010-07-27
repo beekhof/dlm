@@ -1923,7 +1923,9 @@ void store_plocks(struct lockspace *ls, uint32_t *sig)
 	     (there should be no SYNCING plocks) */
 
 	list_for_each_entry(r, &ls->plock_resources, list) {
-		if (r->owner == -1)
+		if (!cfgd_plock_ownership)
+			owner = 0;
+		else if (r->owner == -1)
 			continue;
 		else if (r->owner == our_nodeid)
 			owner = our_nodeid;
