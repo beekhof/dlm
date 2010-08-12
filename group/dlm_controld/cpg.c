@@ -1135,9 +1135,9 @@ static void receive_plocks_stored(struct lockspace *ls, struct dlm_header *hd,
 		return;
 	}
 
-	process_saved_plocks(ls);
 	ls->need_plocks = 0;
 	ls->save_plocks = 0;
+	process_saved_plocks(ls);
 }
 
 static void send_info(struct lockspace *ls, struct change *cg, int type,
@@ -1282,6 +1282,10 @@ static void prepare_plocks(struct lockspace *ls)
 		}
 		ls->plock_ckpt_node = our_nodeid;
 		ls->need_plocks = 0;
+		if (ls->save_plocks) {
+			ls->save_plocks = 0;
+			process_saved_plocks(ls);
+		}
 		return;
 	}
 
@@ -1294,7 +1298,10 @@ static void prepare_plocks(struct lockspace *ls)
 
 	if (!ls->plock_ckpt_node) {
 		ls->need_plocks = 0;
-		ls->save_plocks = 0;
+		if (ls->save_plocks) {
+			ls->save_plocks = 0;
+			process_saved_plocks(ls);
+		}
 		return;
 	}
 
@@ -1302,10 +1309,8 @@ static void prepare_plocks(struct lockspace *ls)
 	   existing plock state in the ckpt to the time that we read that state
 	   from the ckpt. */
 
-	if (ls->need_plocks) {
-		ls->save_plocks = 1;
+	if (ls->need_plocks)
 		return;
-	}
 
 	if (ls->plock_ckpt_node != our_nodeid)
 		return;
@@ -1783,6 +1788,7 @@ int dlm_join_lockspace(struct lockspace *ls)
 	ls->cpg_fd = fd;
 	ls->kernel_stopped = 1;
 	ls->need_plocks = 1;
+	ls->save_plocks = 1;
 	ls->joining = 1;
 
 	memset(&name, 0, sizeof(name));
