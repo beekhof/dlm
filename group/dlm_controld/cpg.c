@@ -1099,6 +1099,10 @@ static void receive_plocks_stored(struct lockspace *ls, struct dlm_header *hd,
 		  "need_plocks %d", hd->nodeid, hd->msgdata, hd->flags,
 		  hd->msgdata2, ls->need_plocks);
 
+	log_plock(ls, "receive_plocks_stored %d:%u flags %x sig %x "
+		  "need_plocks %d", hd->nodeid, hd->msgdata, hd->flags,
+		  hd->msgdata2, ls->need_plocks);
+
 	ls->last_plock_sig = hd->msgdata2;
 
 	if (!ls->need_plocks)
@@ -1268,6 +1272,8 @@ static void prepare_plocks(struct lockspace *ls)
 	struct change *cg = list_first_entry(&ls->changes, struct change, list);
 	struct member *memb;
 	uint32_t sig;
+
+	log_plock(ls, "prepare_plocks");
 
 	if (!cfgd_enable_plock || ls->disable_plock)
 		return;
@@ -1569,6 +1575,12 @@ static void dlm_header_in(struct dlm_header *hd)
 	hd->msgdata2    = le32_to_cpu(hd->msgdata2);
 }
 
+/* after our join confchg, we want to ignore plock messages (see need_plocks
+   checks below) until the point in time where the ckpt_node saves plock
+   state (final start message received); at this time we want to shift from
+   ignoring plock messages to saving plock messages to apply on top of the
+   plock state that we read. */
+
 static void deliver_cb(cpg_handle_t handle,
 		       const struct cpg_name *group_name,
 		       uint32_t nodeid, uint32_t pid,
@@ -1576,6 +1588,7 @@ static void deliver_cb(cpg_handle_t handle,
 {
 	struct lockspace *ls;
 	struct dlm_header *hd;
+	int ignore_plock;
 
 	ls = find_ls_handle(handle);
 	if (!ls) {
@@ -1606,6 +1619,8 @@ static void deliver_cb(cpg_handle_t handle,
 		return;
 	}
 
+	ignore_plock = 0;
+
 	switch (hd->type) {
 	case DLM_MSG_START:
 		receive_start(ls, hd, len);
@@ -1614,6 +1629,10 @@ static void deliver_cb(cpg_handle_t handle,
 	case DLM_MSG_PLOCK:
 		if (ls->disable_plock)
 			break;
+		if (ls->need_plocks && !ls->save_plocks) {
+			ignore_plock = 1;
+			break;
+		}
 		if (cfgd_enable_plock)
 			receive_plock(ls, hd, len);
 		else
@@ -1624,6 +1643,10 @@ static void deliver_cb(cpg_handle_t handle,
 	case DLM_MSG_PLOCK_OWN:
 		if (ls->disable_plock)
 			break;
+		if (ls->need_plocks && !ls->save_plocks) {
+			ignore_plock = 1;
+			break;
+		}
 		if (cfgd_enable_plock && cfgd_plock_ownership)
 			receive_own(ls, hd, len);
 		else
@@ -1635,6 +1658,10 @@ static void deliver_cb(cpg_handle_t handle,
 	case DLM_MSG_PLOCK_DROP:
 		if (ls->disable_plock)
 			break;
+		if (ls->need_plocks && !ls->save_plocks) {
+			ignore_plock = 1;
+			break;
+		}
 		if (cfgd_enable_plock && cfgd_plock_ownership)
 			receive_drop(ls, hd, len);
 		else
@@ -1647,6 +1674,10 @@ static void deliver_cb(cpg_handle_t handle,
 	case DLM_MSG_PLOCK_SYNC_WAITER:
 		if (ls->disable_plock)
 			break;
+		if (ls->need_plocks && !ls->save_plocks) {
+			ignore_plock = 1;
+			break;
+		}
 		if (cfgd_enable_plock && cfgd_plock_ownership)
 			receive_sync(ls, hd, len);
 		else
@@ -1700,6 +1731,10 @@ static void deliver_cb(cpg_handle_t handle,
 	default:
 		log_error("unknown msg type %d", hd->type);
 	}
+
+	if (ignore_plock)
+		log_plock(ls, "msg %s nodeid %d need_plock ignore",
+			  msg_name(hd->type), nodeid);
 
 	apply_changes(ls);
 }

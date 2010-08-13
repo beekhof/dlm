@@ -1562,11 +1562,12 @@ void process_saved_plocks(struct lockspace *ls)
 {
 	struct save_msg *sm, *sm2;
 	struct dlm_header *hd;
+	int count = 0;
+
+	log_plock(ls, "process_saved_plocks begin");
 
 	if (list_empty(&ls->saved_messages))
-		return;
-
-	log_plock(ls, "process_saved_plocks");
+		goto out;
 
 	list_for_each_entry_safe(sm, sm2, &ls->saved_messages, list) {
 		hd = (struct dlm_header *)sm->buf;
@@ -1591,7 +1592,10 @@ void process_saved_plocks(struct lockspace *ls)
 
 		list_del(&sm->list);
 		free(sm);
+		count++;
 	}
+ out:
+	log_plock(ls, "process_saved_plocks %d end", count);
 }
 
 /* locks still marked SYNCING should not go into the ckpt; the new node
