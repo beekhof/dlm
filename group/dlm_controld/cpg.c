@@ -1099,6 +1099,8 @@ static void receive_plocks_stored(struct lockspace *ls, struct dlm_header *hd,
 		  "need_plocks %d", hd->nodeid, hd->msgdata, hd->flags,
 		  hd->msgdata2, ls->need_plocks);
 
+	ls->last_plock_sig = hd->msgdata2;
+
 	if (!ls->need_plocks)
 		return;
 
@@ -1329,8 +1331,12 @@ static void prepare_plocks(struct lockspace *ls)
 	   the previous stored message.  They will read the ckpt from the
 	   previous ckpt_node upon receiving the stored message from us. */
 
-	if (nodes_added(ls))
+	if (nodes_added(ls)) {
 		store_plocks(ls, &sig);
+		ls->last_plock_sig = sig;
+	} else {
+		sig = ls->last_plock_sig;
+	}
 	send_plocks_stored(ls, sig);
 }
 
