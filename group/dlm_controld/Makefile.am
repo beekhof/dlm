@@ -6,10 +6,6 @@ if ENABLE_CMAN
 sbin_PROGRAMS		+= dlm_controld
 endif
 
-if ENABLE_PACEMAKER
-sbin_PROGRAMS		+= dlm_controld.pcmk
-endif
-
 noinst_HEADERS		= config.h dlm_controld.h dlm_daemon.h
 
 shared_SOURCES		= action.c cpg.c crc.c deadlock.c main.c \
@@ -46,30 +42,5 @@ dlm_controld_LDFLAGS	= $(shared_LIBS) \
 			  $(quorum_LIBS)
 
 dlm_controld_LDADD	= $(shared_LDADD)
-
-endif
-
-if ENABLE_PACEMAKER
-
-dlm_controld_pcmk_SOURCES = $(shared_SOURCES) \
-			    pacemaker.c
-
-dlm_controld_pcmk_CPPFLAGS= $(shared_CPPFLAGS) \
-			    -I$(prefix)/include/heartbeat \
-			    -I$(prefix)/include/pacemaker \
-			    -DENABLE_PACEMAKER=1
-
-dlm_controld_pcmk_CFLAGS  = $(shared_CFLAGS) \
-			    $(glib_CFLAGS) \
-			    $(xml_CFLAGS) \
-			    $(totempg_CFLAGS)
-
-dlm_controld_pcmk_LDFLAGS = $(shared_LIBS) \
-			    $(glib_LIBS) \
-			    $(xml_LIBS) \
-			    $(totempg_LIBS) \
-			    -lcib -lcrmcommon -lcrmcluster
-
-dlm_controld_pcmk_LDADD	  = $(shared_LDADD)
 
 endif
