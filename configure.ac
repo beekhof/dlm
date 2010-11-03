@@ -52,6 +52,8 @@ AM_PROG_CC_C_O
 AC_PROG_LN_S
 AC_PROG_INSTALL
 AC_PROG_MAKE_SET
+AC_PROG_CXX
+AC_PROG_RANLIB
 
 ## local helper functions
 
@@ -103,18 +105,6 @@ AC_ARG_WITH([sysloglevel],
 	[ SYSLOGLEVEL="$withval" ],
 	[ SYSLOGLEVEL="LOG_INFO" ])
 
-AC_ARG_ENABLE([pacemaker],
-	[  --enable-pacemaker      enable dlm_controld pacemaker build. ],
-	[ default="no" ])
-
-AC_ARG_ENABLE([cman],
-	[  --enable-cman           enable dlm_controld cman build. ],,
-	[ enable_cman="yes" ])
-
-if test "x${enable_pacemaker}" = xno && test "x${enable_cman}" = xno; then
-	AC_MSG_ERROR([At least one dlm_controld build method (cman or pacemaker) has to be selected])
-fi
-
 AC_ARG_WITH([kernel],
 	[  --with-kernel=path      path to kernel source. ],
 	[ KERNEL_DIR="$withval" ],
@@ -126,22 +116,11 @@ PKG_CHECK_MODULES([corosync],[corosync])
 PKG_CHECK_MODULES([cpg],[libcpg])
 PKG_CHECK_MODULES([sackpt],[libSaCkpt])
 PKG_CHECK_MODULES([logt],[liblogthread])
-
-if test "x${enable_pacemaker}" = xyes; then
-	PKG_CHECK_MODULES([totempg],[libtotem_pg])
-	PKG_CHECK_MODULES([xml],[libxml-2.0])
-	PKG_CHECK_MODULES([glib],[glib-2.0])
-	check_lib_no_libs cib cib_new
-	check_lib_no_libs crmcluster crm_set_status_callback
-	check_lib_no_libs crmcommon init_server_ipc_comms
-fi
-
-if test "x${enable_cman}" = xyes; then
-	PKG_CHECK_MODULES([ccs],[libccs])
-	PKG_CHECK_MODULES([cfg],[libcfg])
-	PKG_CHECK_MODULES([quorum],[libquorum])
-	PKG_CHECK_MODULES([fenced],[libfenced])
-fi
+PKG_CHECK_MODULES([ccs],[libccs])
+PKG_CHECK_MODULES([cfg],[libcfg])
+PKG_CHECK_MODULES([confdb],[libconfdb])
+PKG_CHECK_MODULES([quorum],[libquorum])
+PKG_CHECK_MODULES([fenced],[libfenced])
 
 # external libs (no pkgconfig)
 check_lib_no_libs pthread pthread_mutex_lock
@@ -212,9 +191,6 @@ AC_DEFINE_UNQUOTED([SYSLOGFACILITY], $(eval echo ${SYSLOGFACILITY}),
 
 AC_DEFINE_UNQUOTED([SYSLOGLEVEL], $(eval echo ${SYSLOGLEVEL}),
 		   [Default syslog level])
-
-AM_CONDITIONAL(ENABLE_PACEMAKER, test "x${enable_pacemaker}" = xyes)
-AM_CONDITIONAL(ENABLE_CMAN, test "x${enable_cman}" = xyes)
 
 ## *FLAGS handling
 
