@@ -651,6 +651,7 @@ static int check_fs_done(struct lockspace *ls)
 		if (node->fs_notified) {
 			log_group(ls, "check_fs nodeid %d clear", node->nodeid);
 			node->check_fs = 0;
+			node->fs_notified = 0;
 		} else {
 			log_group(ls, "check_fs nodeid %d needs fs notify",
 				  node->nodeid);
