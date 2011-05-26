@@ -47,6 +47,7 @@ struct resource {
 	struct list_head	locks;	   /* one lock for each range */
 	struct list_head	waiters;
 	struct list_head        pending;   /* discovering r owner */
+	struct rb_node		rb_node;
 };
 
 #define P_SYNCING 0x00000001 /* plock has been sent as part of sync but not
@@ -237,6 +238,52 @@ static uint64_t dt_usec(struct timeval *start, struct timeval *stop)
 	return dt;
 }
 
+static struct resource * rb_search_plock_resource(struct lockspace *ls, uint64_t number)
+{
+	struct rb_node *n = ls->plock_resources_root.rb_node;
+	struct resource *r;
+
+	while (n) {
+		r = rb_entry(n, struct resource, rb_node);
+		if (number < r->number)
+			n = n->rb_left;
+		else if (number > r->number)
+			n = n->rb_right;
+		else
+			return r;
+	}
+	return NULL;
+}
+
+static void rb_insert_plock_resource(struct lockspace *ls, struct resource *r)
+{
+	struct resource *entry;
+	struct rb_node **p;
+	struct rb_node *parent = NULL;
+	
+	p = &ls->plock_resources_root.rb_node;
+	while (*p) {
+		parent = *p;
+		entry = rb_entry(parent, struct resource, rb_node);
+		if (r->number < entry->number)
+			p = &parent->rb_left;
+		else if (r->number > entry->number)
+			p = &parent->rb_right;
+		else
+			return; 
+	}
+	rb_link_node(&r->rb_node, parent, p);
+	rb_insert_color(&r->rb_node, &ls->plock_resources_root);
+}
+
+static void rb_del_plock_resource(struct lockspace *ls, struct resource *r)
+{
+	if (!RB_EMPTY_NODE(&r->rb_node)) {
+		rb_erase(&r->rb_node, &ls->plock_resources_root);
+		RB_CLEAR_NODE(&r->rb_node);
+	}
+}
+
 static struct resource *search_resource(struct lockspace *ls, uint64_t number)
 {
 	struct resource *r;
@@ -254,7 +301,7 @@ static int find_resource(struct lockspace *ls, uint64_t number, int create,
 	struct resource *r = NULL;
 	int rv = 0;
 
-	r = search_resource(ls, number);
+	r = rb_search_plock_resource(ls, number);
 	if (r)
 		goto out;
 
@@ -282,6 +329,7 @@ static int find_resource(struct lockspace *ls, uint64_t number, int create,
 		r->owner = 0;
 
 	list_add_tail(&r->list, &ls->plock_resources);
+	rb_insert_plock_resource(ls, r);
  out:
 	if (r)
 		gettimeofday(&r->last_access, NULL);
@@ -289,13 +337,14 @@ static int find_resource(struct lockspace *ls, uint64_t number, int create,
 	return rv;
 }
 
-static void put_resource(struct resource *r)
+static void put_resource(struct lockspace *ls, struct resource *r)
 {
 	/* with ownership, resources are only freed via drop messages */
 	if (cfgd_plock_ownership)
 		return;
 
 	if (list_empty(&r->locks) && list_empty(&r->waiters)) {
+		rb_del_plock_resource(ls, r);
 		list_del(&r->list);
 		free(r);
 	}
@@ -705,7 +754,7 @@ static void do_lock(struct lockspace *ls, struct dlm_plock_info *in,
 		write_result(ls, in, rv);
 
 	do_waiters(ls, r);
-	put_resource(r);
+	put_resource(ls, r);
 }
 
 static void do_unlock(struct lockspace *ls, struct dlm_plock_info *in,
@@ -719,7 +768,7 @@ static void do_unlock(struct lockspace *ls, struct dlm_plock_info *in,
 		write_result(ls, in, rv);
 
 	do_waiters(ls, r);
-	put_resource(r);
+	put_resource(ls, r);
 }
 
 /* we don't even get to this function if the getlk isn't from us */
@@ -735,7 +784,7 @@ static void do_get(struct lockspace *ls, struct dlm_plock_info *in,
 		rv = 0;
 
 	write_result(ls, in, rv);
-	put_resource(r);
+	put_resource(ls, r);
 }
 
 static void save_message(struct lockspace *ls, struct dlm_header *hd, int len,
@@ -1341,6 +1390,7 @@ static void _receive_drop(struct lockspace *ls, struct dlm_header *hd, int len)
 	   guaranteed to be the same on all nodes */
 
 	if (list_empty(&r->locks) && list_empty(&r->waiters)) {
+		rb_del_plock_resource(ls, r);
 		list_del(&r->list);
 		free(r);
 	} else {
@@ -1738,6 +1788,7 @@ static int unpack_section_buf(struct lockspace *ls, char *numbuf, int buflen,
 	}
 
 	list_add_tail(&r->list, &ls->plock_resources);
+	rb_insert_plock_resource(ls, r);
 	*lock_count = count;
 	return 0;
 }
@@ -2239,6 +2290,7 @@ void purge_plocks(struct lockspace *ls, int nodeid, int unmount)
 
 		if (!cfgd_plock_ownership &&
 		    list_empty(&r->locks) && list_empty(&r->waiters)) {
+			rb_del_plock_resource(ls, r);
 			list_del(&r->list);
 			free(r);
 		}

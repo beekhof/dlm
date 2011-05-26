@@ -164,6 +164,7 @@ static struct lockspace *create_ls(char *name)
 	INIT_LIST_HEAD(&ls->node_history);
 	INIT_LIST_HEAD(&ls->saved_messages);
 	INIT_LIST_HEAD(&ls->plock_resources);
+	ls->plock_resources_root = RB_ROOT;
 	INIT_LIST_HEAD(&ls->deadlk_nodes);
 	INIT_LIST_HEAD(&ls->transactions);
 	INIT_LIST_HEAD(&ls->resources);

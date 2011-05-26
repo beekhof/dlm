@@ -43,6 +43,7 @@
 #include "dlm_controld.h"
 #include "list.h"
 #include "linux_endian.h"
+#include "rbtree.h"
 
 /* DLM_LOCKSPACE_LEN: maximum lockspace name length, from linux/dlmconstants.h.
    Copied in libdlm.h so apps don't need to include the kernel header.
@@ -208,6 +209,7 @@ struct lockspace {
 	uint32_t		associated_mg_id;
 	struct list_head	saved_messages;
 	struct list_head	plock_resources;
+	struct rb_root		plock_resources_root;
 	time_t			last_checkpoint_time;
 	time_t			last_plock_time;
 	struct timeval		drop_resources_last;
