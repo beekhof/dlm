@@ -6,7 +6,7 @@ noinst_HEADERS		= config.h dlm_controld.h dlm_daemon.h
 
 dlm_controld_SOURCES	= action.c cpg.c crc.c deadlock.c main.c \
 			  netlink.c plock.c config.c member_cman.c \
-			  logging.c
+			  logging.c rbtree.c
 
 dlm_controld_CPPFLAGS	= -I$(top_srcdir)/dlm/libdlm \
 			  -I$(top_srcdir)/dlm/libdlmcontrol \
