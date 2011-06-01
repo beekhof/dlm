@@ -3,6 +3,10 @@
 
 #include <linux/dlm_plock.h>
 
+/* FIXME: remove this once everyone is using the version of
+ * dlm_plock.h which defines it */
+#define DLM_PLOCK_FL_CLOSE 1
+
 static uint32_t plock_read_count;
 static uint32_t plock_recv_count;
 static uint32_t plock_rate_delays;
@@ -679,6 +683,27 @@ static int unlock_internal(struct lockspace *ls, struct resource *r,
 	return rv;
 }
 
+static void clear_waiters(struct lockspace *ls, struct resource *r,
+			  struct dlm_plock_info *in)
+{
+	struct lock_waiter *w, *safe;
+
+	list_for_each_entry_safe(w, safe, &r->waiters, list) {
+		if (w->info.nodeid != in->nodeid || w->info.owner != in->owner)
+			continue;
+
+		list_del(&w->list);
+
+		log_plock_error(ls, "clear waiter %llx %llx-%llx %d/%u/%llx",
+				(unsigned long long)in->number,
+				(unsigned long long)in->start,
+				(unsigned long long)in->end,
+				in->nodeid, in->pid,
+				(unsigned long long)in->owner);
+		free(w);
+	}
+}
+
 static int add_waiter(struct lockspace *ls, struct resource *r,
 		      struct dlm_plock_info *in)
 
@@ -764,9 +789,16 @@ static void do_unlock(struct lockspace *ls, struct dlm_plock_info *in,
 
 	rv = unlock_internal(ls, r, in);
 
+	if (in->flags & DLM_PLOCK_FL_CLOSE) {
+		clear_waiters(ls, r, in);
+		/* no replies for unlock-close ops */
+		goto skip_result;
+	}
+
 	if (in->nodeid == our_nodeid)
 		write_result(ls, in, rv);
 
+ skip_result:
 	do_waiters(ls, r);
 	put_resource(ls, r);
 }
