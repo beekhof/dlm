@@ -1242,6 +1242,8 @@ static void do_plocks(char *name)
 
 	dlmc_dump_plocks(name, buf);
 
+	buf[DLMC_DUMP_SIZE-1] = '\0';
+
 	do_write(STDOUT_FILENO, buf, strlen(buf));
 }
 
@@ -1253,7 +1255,10 @@ static void do_dump(void)
 
 	dlmc_dump_debug(buf);
 
+	buf[DLMC_DUMP_SIZE-1] = '\0';
+
 	do_write(STDOUT_FILENO, buf, strlen(buf));
+	printf("\n");
 }
 
 static void do_log_plock(void)
@@ -1264,7 +1269,10 @@ static void do_log_plock(void)
 
 	dlmc_dump_log_plock(buf);
 
+	buf[DLMC_DUMP_SIZE-1] = '\0';
+
 	do_write(STDOUT_FILENO, buf, strlen(buf));
+	printf("\n");
 }
 
 int main(int argc, char **argv)

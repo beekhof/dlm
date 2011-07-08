@@ -20,16 +20,21 @@ static struct timeval plock_recv_time;
 static struct timeval plock_rate_last;
 
 static int plock_device_fd = -1;
-static SaCkptHandleT system_ckpt_handle;
-static SaCkptCallbacksT callbacks = { 0, 0 };
-static SaVersionT version = { 'B', 1, 1 };
-static char section_buf[1024 * 1024];
-static uint32_t section_len;
 static int need_fsid_translation = 0;
 
 extern int message_flow_control_on;
 
-struct pack_plock {
+#define RD_CONTINUE 0x00000001
+
+struct resource_data {
+	uint64_t number;
+	int      owner;
+	uint32_t lock_count;
+	uint32_t flags;
+	uint32_t pad;
+};
+
+struct plock_data {
 	uint64_t start;
 	uint64_t end;
 	uint64_t owner;
@@ -161,23 +166,12 @@ static const char *ex_str(int optype, int ex)
 
 int setup_plocks(void)
 {
-	SaAisErrorT err;
-
 	plock_read_count = 0;
 	plock_recv_count = 0;
 	plock_rate_delays = 0;
 	gettimeofday(&plock_read_time, NULL);
 	gettimeofday(&plock_recv_time, NULL);
 	gettimeofday(&plock_rate_last, NULL);
-
-	err = saCkptInitialize(&system_ckpt_handle, &callbacks, &version);
-	if (err != SA_AIS_OK) {
-		log_error("ckpt init error %d", err);
-		cfgd_enable_plock = 0;
-
-		/* still try to open and read the control device so that we can
-		   send ENOSYS back to the kernel if it tries to do a plock */
-	}
 
 	if (plock_minor) {
 		plock_device_fd = open("/dev/misc/dlm_plock", O_RDWR);
@@ -202,8 +196,6 @@ int setup_plocks(void)
 
 void close_plocks(void)
 {
-	if (system_ckpt_handle)
-		saCkptFinalize(system_ckpt_handle);
 	if (plock_device_fd > 0)
 		close(plock_device_fd);
 }
@@ -321,7 +313,7 @@ static int find_resource(struct lockspace *ls, uint64_t number, int create,
 
 	r = malloc(sizeof(struct resource));
 	if (!r) {
-		log_plock_error(ls, "find_resource no memory %d", errno);
+		log_elock(ls, "find_resource no memory %d", errno);
 		rv = -ENOMEM;
 		goto out;
 	}
@@ -699,12 +691,12 @@ static void clear_waiters(struct lockspace *ls, struct resource *r,
 
 		list_del(&w->list);
 
-		log_plock_error(ls, "clear waiter %llx %llx-%llx %d/%u/%llx",
-				(unsigned long long)in->number,
-				(unsigned long long)in->start,
-				(unsigned long long)in->end,
-				in->nodeid, in->pid,
-				(unsigned long long)in->owner);
+		log_elock(ls, "clear waiter %llx %llx-%llx %d/%u/%llx",
+			  (unsigned long long)in->number,
+			  (unsigned long long)in->start,
+			  (unsigned long long)in->end,
+			  in->nodeid, in->pid,
+			  (unsigned long long)in->owner);
 		free(w);
 	}
 }
@@ -864,8 +856,8 @@ static void __receive_plock(struct lockspace *ls, struct dlm_plock_info *in,
 		do_get(ls, in, r);
 		break;
 	default:
-		log_plock_error(ls, "receive_plock error from %d optype %d",
-				from, in->optype);
+		log_elock(ls, "receive_plock error from %d optype %d",
+			  from, in->optype);
 		if (from == our_nodeid)
 			write_result(ls, in, -EINVAL);
 	}
@@ -914,8 +906,8 @@ static void _receive_plock(struct lockspace *ls, struct dlm_header *hd, int len)
 		return;
 
 	if (from != hd->nodeid || from != info.nodeid) {
-		log_plock_error(ls, "receive_plock error from %d header %d info %d",
-				from, hd->nodeid, info.nodeid);
+		log_elock(ls, "receive_plock error from %d header %d info %d",
+			  from, hd->nodeid, info.nodeid);
 		return;
 	}
 
@@ -946,8 +938,8 @@ static void _receive_plock(struct lockspace *ls, struct dlm_header *hd, int len)
 		/* r not found, rv is -ENOENT, this shouldn't happen because
 		   process_plocks() creates a resource for every op */
 
-		log_plock_error(ls, "receive_plock error from %d no r %llx %d",
-				from, (unsigned long long)info.number, rv);
+		log_elock(ls, "receive_plock error from %d no r %llx %d",
+			  from, (unsigned long long)info.number, rv);
 		return;
 	}
 
@@ -1036,7 +1028,7 @@ static int send_struct_info(struct lockspace *ls, struct dlm_plock_info *in,
 	free(buf);
  out:
 	if (rv)
-		log_plock_error(ls, "send_struct_info error %d", rv);
+		log_elock(ls, "send_struct_info error %d", rv);
 	return rv;
 }
 
@@ -1129,7 +1121,7 @@ static void save_pending_plock(struct lockspace *ls, struct resource *r,
 
 	w = malloc(sizeof(struct lock_waiter));
 	if (!w) {
-		log_plock_error(ls, "save_pending_plock no mem");
+		log_elock(ls, "save_pending_plock no mem");
 		return;
 	}
 	memcpy(&w->info, in, sizeof(struct dlm_plock_info));
@@ -1280,10 +1272,10 @@ static void _receive_own(struct lockspace *ls, struct dlm_header *hd, int len)
 	}
 
 	if (should_not_happen) {
-		log_plock_error(ls, "receive_own error from %u %llx "
-				"info nodeid %d r owner %d",
-			  	from, (unsigned long long)r->number,
-				info.nodeid, r->owner);
+		log_elock(ls, "receive_own error from %u %llx "
+			  "info nodeid %d r owner %d",
+			  from, (unsigned long long)r->number,
+			  info.nodeid, r->owner);
 	}
 }
 
@@ -1329,14 +1321,13 @@ static void clear_syncing_flag(struct lockspace *ls, struct resource *r,
 		}
 	}
 
-	log_plock_error(ls, "clear_syncing error %llx no match %s %llx-%llx "
-			"%d/%u/%llx",
-			(unsigned long long)r->number,
-			in->ex ? "WR" : "RD", 
-			(unsigned long long)in->start,
-			(unsigned long long)in->end,
-			in->nodeid, in->pid,
-			(unsigned long long)in->owner);
+	log_elock(ls, "clear_syncing error %llx no match %s %llx-%llx %d/%u/%llx",
+		  (unsigned long long)r->number,
+		  in->ex ? "WR" : "RD", 
+		  (unsigned long long)in->start,
+		  (unsigned long long)in->end,
+		  in->nodeid, in->pid,
+		  (unsigned long long)in->owner);
 }
 
 static void _receive_sync(struct lockspace *ls, struct dlm_header *hd, int len)
@@ -1358,8 +1349,8 @@ static void _receive_sync(struct lockspace *ls, struct dlm_header *hd, int len)
 
 	rv = find_resource(ls, info.number, 0, &r);
 	if (rv) {
-		log_plock_error(ls, "receive_sync error no r %llx from %d",
-				info.number, from);
+		log_elock(ls, "receive_sync error no r %llx from %d",
+			  info.number, from);
 		return;
 	}
 
@@ -1422,8 +1413,8 @@ static void _receive_drop(struct lockspace *ls, struct dlm_header *hd, int len)
 
 	if (!list_empty(&r->pending)) {
 		/* shouldn't happen */
-		log_plock_error(ls, "receive_drop error from %d r %llx pending op",
-				from, (unsigned long long)r->number);
+		log_elock(ls, "receive_drop error from %d r %llx pending op",
+			  from, (unsigned long long)r->number);
 		return;
 	}
 
@@ -1661,7 +1652,7 @@ void process_saved_plocks(struct lockspace *ls)
 	struct dlm_header *hd;
 	int count = 0;
 
-	log_plock(ls, "process_saved_plocks begin");
+	log_dlock(ls, "process_saved_plocks begin");
 
 	if (list_empty(&ls->saved_messages))
 		goto out;
@@ -1692,31 +1683,59 @@ void process_saved_plocks(struct lockspace *ls)
 		count++;
 	}
  out:
-	log_plock(ls, "process_saved_plocks %d end", count);
+	log_dlock(ls, "process_saved_plocks %d done", count);
 }
 
 /* locks still marked SYNCING should not go into the ckpt; the new node
    will get those locks by receiving PLOCK_SYNC messages */
 
-static void pack_section_buf(struct lockspace *ls, struct resource *r,
-			     int owner)
+#define MAX_SEND_SIZE 1024 /* 1024 holds 24 plock_data */
+
+static char send_buf[MAX_SEND_SIZE];
+
+static int pack_send_buf(struct lockspace *ls, struct resource *r, int owner,
+			 int full, int *count_out, void **last)
 {
-	struct pack_plock *pp;
+	struct resource_data *rd;
+	struct plock_data *pp;
 	struct posix_lock *po;
 	struct lock_waiter *w;
 	int count = 0;
+	int find = 0;
+	int len;
 
-	/* plocks on owned resources are not replicated on other nodes;
-	   N.B. owner not always equal to r->owner */
+	/* N.B. owner not always equal to r->owner */
+	rd = (struct resource_data *)(send_buf + sizeof(struct dlm_header));
+	rd->number = cpu_to_le64(r->number);
+	rd->owner = cpu_to_le32(owner);
 
+	if (full) {
+		rd->flags = RD_CONTINUE;
+		find = 1;
+	}
+
+	/* plocks not replicated for owned resources */
 	if (cfgd_plock_ownership && (owner == our_nodeid))
-		return;
+		goto done;
 
-	pp = (struct pack_plock *) &section_buf;
+	len = sizeof(struct dlm_header) + sizeof(struct resource_data);
+
+	pp = (struct plock_data *)(send_buf + sizeof(struct dlm_header) + sizeof(struct resource_data));
 
 	list_for_each_entry(po, &r->locks, list) {
+		if (find && *last != po)
+			continue;
+		find = 0;
+
 		if (po->flags & P_SYNCING)
 			continue;
+
+		if (len + sizeof(struct plock_data) > sizeof(send_buf)) {
+			*last = po;
+			goto full;
+		}
+		len += sizeof(struct plock_data);
+
 		pp->start	= cpu_to_le64(po->start);
 		pp->end		= cpu_to_le64(po->end);
 		pp->owner	= cpu_to_le64(po->owner);
@@ -1729,8 +1748,19 @@ static void pack_section_buf(struct lockspace *ls, struct resource *r,
 	}
 
 	list_for_each_entry(w, &r->waiters, list) {
+		if (find && *last != w)
+			continue;
+		find = 0;
+
 		if (w->flags & P_SYNCING)
 			continue;
+
+		if (len + sizeof(struct plock_data) > sizeof(send_buf)) {
+			*last = w;
+			goto full;
+		}
+		len += sizeof(struct plock_data);
+
 		pp->start	= cpu_to_le64(w->info.start);
 		pp->end		= cpu_to_le64(w->info.end);
 		pp->owner	= cpu_to_le64(w->info.owner);
@@ -1741,209 +1771,17 @@ static void pack_section_buf(struct lockspace *ls, struct resource *r,
 		pp++;
 		count++;
 	}
-
-	section_len = count * sizeof(struct pack_plock);
-}
-
-static int unpack_section_buf(struct lockspace *ls, char *numbuf, int buflen,
-			      uint64_t *r_num, int *lock_count)
-{
-	struct pack_plock *pp;
-	struct posix_lock *po;
-	struct lock_waiter *w;
-	struct resource *r;
-	int count = section_len / sizeof(struct pack_plock);
-	int i, owner = 0;
-	unsigned long long num;
-	struct timeval now;
-
-	gettimeofday(&now, NULL);
-
-	sscanf(numbuf, "r%llu.%d", &num, &owner);
-
-#if 0
-	/* would be nice to always compile this, but it adds a lot of time */
-	r = search_resource(ls, num);
-	if (r) {
-		log_error("unpack %llu duplicate", num);
-		return -1;
-	}
-#endif
-
-	r = malloc(sizeof(struct resource));
-	if (!r)
-		return -ENOMEM;
-	memset(r, 0, sizeof(struct resource));
-	INIT_LIST_HEAD(&r->locks);
-	INIT_LIST_HEAD(&r->waiters);
-	INIT_LIST_HEAD(&r->pending);
-
-	if (!cfgd_plock_ownership) {
-		if (owner) {
-			log_error("unpack %llu bad owner %d count %d",
-				  (unsigned long long)num, owner, count);
-			free(r);
-			return -1;
-		}
-	} else {
-		if (!owner)
-			r->flags |= R_GOT_UNOWN;
-
-		/* no locks should be included for owned resources */
-
-		if (owner && count) {
-			log_error("unpack %llu owner %d bad count %d",
-				  (unsigned long long)num, owner, count);
-			free(r);
-			return -1;
-		}
-	}
-
-	r->number = num;
-	r->owner = owner;
-	r->last_access = now;
-
-	*r_num = num;
-
-	pp = (struct pack_plock *) &section_buf;
-
-	for (i = 0; i < count; i++) {
-		if (!pp->waiter) {
-			po = malloc(sizeof(struct posix_lock));
-			if (!po)
-				return -ENOMEM;
-			po->start	= le64_to_cpu(pp->start);
-			po->end		= le64_to_cpu(pp->end);
-			po->owner	= le64_to_cpu(pp->owner);
-			po->pid		= le32_to_cpu(pp->pid);
-			po->nodeid	= le32_to_cpu(pp->nodeid);
-			po->ex		= pp->ex;
-			list_add_tail(&po->list, &r->locks);
-		} else {
-			w = malloc(sizeof(struct lock_waiter));
-			if (!w)
-				return -ENOMEM;
-			w->info.start	= le64_to_cpu(pp->start);
-			w->info.end	= le64_to_cpu(pp->end);
-			w->info.owner	= le64_to_cpu(pp->owner);
-			w->info.pid	= le32_to_cpu(pp->pid);
-			w->info.nodeid	= le32_to_cpu(pp->nodeid);
-			w->info.ex	= pp->ex;
-			list_add_tail(&w->list, &r->waiters);
-		}
-		pp++;
-	}
-
-	list_add_tail(&r->list, &ls->plock_resources);
-	rb_insert_plock_resource(ls, r);
-	*lock_count = count;
+ done:
+	rd->lock_count = cpu_to_le32(count);
+	*count_out = count;
+	*last = NULL;
 	return 0;
+
+ full:
+	rd->lock_count = cpu_to_le32(count);
+	*count_out = count;
+	return 1;
 }
-
-/* If we are the new ckpt_node, we'll be unlinking a ckpt that we don't
-   have open, which was created by the previous ckpt_node.  The previous
-   ckpt_node should have closed the ckpt in set_plock_ckpt_node() so it
-   will go away when we unlink it here. */
-
-static int _unlink_checkpoint(struct lockspace *ls, SaNameT *name)
-{
-	SaCkptCheckpointHandleT h;
-	SaCkptCheckpointDescriptorT s;
-	SaAisErrorT rv;
-	int ret = 0;
-
-	h = (SaCkptCheckpointHandleT) ls->plock_ckpt_handle;
-	log_group(ls, "unlink ckpt %llx", (unsigned long long)h);
-
- unlink_retry:
-	rv = saCkptCheckpointUnlink(system_ckpt_handle, name);
-	if (rv == SA_AIS_ERR_TRY_AGAIN) {
-		log_group(ls, "unlink ckpt retry");
-		sleep(1);
-		goto unlink_retry;
-	}
-	if (rv == SA_AIS_OK)
-		goto out_close;
-
-	log_group(ls, "unlink ckpt error %d %s", rv, ls->name);
-	ret = -1;
-
- status_retry:
-	rv = saCkptCheckpointStatusGet(h, &s);
-	if (rv == SA_AIS_ERR_TRY_AGAIN) {
-		log_group(ls, "unlink ckpt status retry");
-		sleep(1);
-		goto status_retry;
-	}
-	if (rv != SA_AIS_OK) {
-		log_group(ls, "unlink ckpt status error %d %s", rv, ls->name);
-		goto out_close;
-	}
-
-	log_group(ls, "unlink ckpt status: size %llu, max sections %u, "
-		      "max section size %llu, section count %u, mem %u",
-		 (unsigned long long)s.checkpointCreationAttributes.checkpointSize,
-		 s.checkpointCreationAttributes.maxSections,
-		 (unsigned long long)s.checkpointCreationAttributes.maxSectionSize,
-		 s.numberOfSections, s.memoryUsed);
-
- out_close:
-	if (!h)
-		goto out;
-
-	rv = saCkptCheckpointClose(h);
-	if (rv == SA_AIS_ERR_TRY_AGAIN) {
-		log_group(ls, "unlink ckpt close retry");
-		sleep(1);
-		goto out_close;
-	}
-	if (rv != SA_AIS_OK) {
-		log_error("unlink ckpt %llx close err %d %s",
-			  (unsigned long long)h, rv, ls->name);
-		/* should we return an error here and possibly cause
-		   store_plocks() to fail on this? */
-		/* ret = -1; */
-	}
- out:
-	ls->plock_ckpt_handle = 0;
-	return ret;
-}
-
-void close_plock_checkpoint(struct lockspace *ls)
-{
-	SaCkptCheckpointHandleT h;
-	SaAisErrorT rv;
-
-	h = (SaCkptCheckpointHandleT) ls->plock_ckpt_handle;
-	if (!h)
-		return;
- retry:
-	rv = saCkptCheckpointClose(h);
-	if (rv == SA_AIS_ERR_TRY_AGAIN) {
-		log_group(ls, "close_plock_checkpoint retry");
-		sleep(1);
-		goto retry;
-	}
-	if (rv != SA_AIS_OK) {
-		log_error("close_plock_checkpoint %llx err %d %s",
-			  (unsigned long long)h, rv, ls->name);
-	}
-
-	ls->plock_ckpt_handle = 0;
-}
-
-/*
- * section id is r<inodenum>.<owner>, the maximum string length is:
- * "r" prefix       =  1    strlen("r")
- * max uint64       = 20    strlen("18446744073709551615")
- * "." before owner =  1    strlen(".")
- * max int          = 11    strlen("-2147483647")
- * \0 at end        =  1
- * ---------------------
- *                    34    SECTION_NAME_LEN
- */
-
-#define SECTION_NAME_LEN 34
 
 /* Copy all plock state into a checkpoint so new node can retrieve it.  The
    node creating the ckpt for the mounter needs to be the same node that's
@@ -1956,104 +1794,30 @@ void close_plock_checkpoint(struct lockspace *ls)
    it.  The ckpt should then disappear and the new node can create a new ckpt
    for the next mounter. */
 
-void store_plocks(struct lockspace *ls, uint32_t *sig)
+static int send_plocks_data(struct lockspace *ls, uint32_t seq, char *buf, int len)
 {
-	SaCkptCheckpointCreationAttributesT attr;
-	SaCkptCheckpointHandleT h;
-	SaCkptSectionIdT section_id;
-	SaCkptSectionCreationAttributesT section_attr;
-	SaCkptCheckpointOpenFlagsT flags;
-	SaNameT name;
-	SaAisErrorT rv;
-	char buf[SECTION_NAME_LEN];
+	struct dlm_header *hd;
+
+	hd = (struct dlm_header *)buf;
+	hd->type = DLM_MSG_PLOCKS_DATA;
+	hd->msgdata = seq;
+
+	dlm_send_message(ls, buf, len);
+
+	return 0;
+}
+
+void send_all_plocks_data(struct lockspace *ls, uint32_t seq, uint32_t *plocks_data)
+{
 	struct resource *r;
-	struct posix_lock *po;
-	struct lock_waiter *w;
-	int total_size, section_size, max_section_size;
-	int len, owner;
-	uint32_t r_count = 0, p_count = 0;
-	uint64_t r_num_first = 0, r_num_last = 0;
+	void *last;
+	int owner, count, len, full;
+	uint32_t send_count = 0;
 
 	if (!cfgd_enable_plock || ls->disable_plock)
 		return;
 
-	/* no change to plock state since we created the last checkpoint */
-	if (ls->last_checkpoint_time > ls->last_plock_time) {
-		log_group(ls, "store_plocks saved ckpt uptodate");
-		r_num_first = ls->checkpoint_r_num_first;
-		r_num_last = ls->checkpoint_r_num_last;
-		r_count = ls->checkpoint_r_count;
-		p_count = ls->checkpoint_p_count;
-		goto out;
-	}
-	ls->last_checkpoint_time = time(NULL);
-
-	len = snprintf((char *)name.value, SA_MAX_NAME_LENGTH, "dlmplock.%s",
-		       ls->name);
-	name.length = len;
-
-	_unlink_checkpoint(ls, &name);
-
-	/* loop through all plocks to figure out sizes to set in
-	   the attr fields */
-
-	r_count = 0;
-	p_count = 0;
-	total_size = 0;
-	max_section_size = 0;
-
-	list_for_each_entry(r, &ls->plock_resources, list) {
-		if (r->owner == -1)
-			continue;
-
-		r_count++;
-		section_size = 0;
-		list_for_each_entry(po, &r->locks, list) {
-			section_size += sizeof(struct pack_plock);
-			p_count++;
-		}
-		list_for_each_entry(w, &r->waiters, list) {
-			section_size += sizeof(struct pack_plock);
-			p_count++;
-		}
-		total_size += section_size;
-		if (section_size > max_section_size)
-			max_section_size = section_size;
-	}
-
-	log_group(ls, "store_plocks r_count %u p_count %u "
-		  "total_size %d max_section_size %d",
-		  r_count, p_count, total_size, max_section_size);
-	log_plock(ls, "store_plocks r_count %u p_count %u "
-		  "total_size %d max_section_size %d",
-		  r_count, p_count, total_size, max_section_size);
-
-	attr.creationFlags = SA_CKPT_WR_ALL_REPLICAS;
-	attr.checkpointSize = total_size;
-	attr.retentionDuration = SA_TIME_MAX;
-	attr.maxSections = r_count + 1;      /* don't know why we need +1 */
-	attr.maxSectionSize = max_section_size;
-	attr.maxSectionIdSize = SECTION_NAME_LEN;
-
-	flags = SA_CKPT_CHECKPOINT_READ |
-		SA_CKPT_CHECKPOINT_WRITE |
-		SA_CKPT_CHECKPOINT_CREATE;
-
- open_retry:
-	rv = saCkptCheckpointOpen(system_ckpt_handle, &name,&attr,flags,0,&h);
-	if (rv == SA_AIS_ERR_TRY_AGAIN) {
-		log_group(ls, "store_plocks ckpt open retry");
-		sleep(1);
-		goto open_retry;
-	}
-	if (rv != SA_AIS_OK) {
-		log_error("store_plocks ckpt open error %d %s", rv, ls->name);
-		goto fail;
-	}
-
-	log_group(ls, "store_plocks open ckpt handle %llx",
-		  (unsigned long long)h);
-	ls->plock_ckpt_handle = (uint64_t) h;
+	log_dlock(ls, "send_all_plocks_data %d:%u", our_nodeid, seq);
 
 	/* - If r owner is -1, ckpt nothing.
 	   - If r owner is us, ckpt owner of us and no plocks.
@@ -2079,215 +1843,214 @@ void store_plocks(struct lockspace *ls, uint32_t *sig)
 		else if (!r->owner)
 			owner = 0;
 		else {
-			log_plock_error(ls, "store_plocks error owner %d r %llx",
-					r->owner, (unsigned long long)r->number);
+			log_elock(ls, "send_all_plocks_data error owner %d r %llx",
+				  r->owner, (unsigned long long)r->number);
 			continue;
 		}
 
-		memset(&buf, 0, sizeof(buf));
-		len = snprintf(buf, SECTION_NAME_LEN, "r%llu.%d",
-			       (unsigned long long)r->number, owner);
+		memset(&send_buf, 0, sizeof(send_buf));
+		count = 0;
+		full = 0;
+		last = NULL;
 
-		section_id.id = (void *)buf;
-		section_id.idLen = len + 1;
-		section_attr.sectionId = &section_id;
-		section_attr.expirationTime = SA_TIME_END;
+		do {
+			full = pack_send_buf(ls, r, owner, full, &count, &last);
 
-		memset(&section_buf, 0, sizeof(section_buf));
-		section_len = 0;
+			len = sizeof(struct dlm_header) +
+			      sizeof(struct resource_data) +
+			      sizeof(struct plock_data) * count;
 
-		pack_section_buf(ls, r, owner);
+			log_plock(ls, "send_plocks_data %d:%u n %llu o %d locks %d len %d",
+				  our_nodeid, seq, (unsigned long long)r->number, r->owner,
+				  count, len);
 
-		if (!r_num_first)
-			r_num_first = r->number;
-		r_num_last = r->number;
+			send_plocks_data(ls, seq, send_buf, len);
 
-		log_plock(ls, "wr sect ro %d rf %x len %u \"%s\"",
-			  r->owner, r->flags, section_len, buf);
+			send_count++;
 
-	 create_retry:
-		rv = saCkptSectionCreate(h, &section_attr, &section_buf,
-					 section_len);
-		if (rv == SA_AIS_ERR_TRY_AGAIN) {
-			log_group(ls, "store_plocks ckpt create retry");
-			sleep(1);
-			goto create_retry;
-		}
-		if (rv != SA_AIS_OK) {
-			log_error("store_plocks ckpt section create err %d %s",
-				  rv, ls->name);
-			goto fail;
-		}
+		} while (full);
 	}
- out:
-	*sig = (0xFFFFFFFF & r_num_first) ^ (0xFFFFFFFF & r_num_last) ^ r_count;
 
-	log_group(ls, "store_plocks first %llu last %llu r_count %u "
-		  "p_count %u sig %x",
-		  (unsigned long long)r_num_first,
-		  (unsigned long long)r_num_last,
-		  r_count, p_count, *sig);
-	log_plock(ls, "store_plocks first %llu last %llu r_count %u "
-		  "p_count %u sig %x",
-		  (unsigned long long)r_num_first,
-		  (unsigned long long)r_num_last,
-		  r_count, p_count, *sig);
+	*plocks_data = send_count;
 
-	ls->checkpoint_r_num_first = r_num_first;
-	ls->checkpoint_r_num_last = r_num_last;
-	ls->checkpoint_r_count = r_count;
-	ls->checkpoint_p_count = p_count;
-	return;
-
- fail:
-	ls->disable_plock = 1;
-	/* force the node receiving plocks to fail sig check and disable
-	   plocks as well */
-	*sig = 0xF0000000;
+	log_dlock(ls, "send_all_plocks_data %d:%u %u done",
+		  our_nodeid, seq, send_count);
 }
 
-/* called by a node that's just been added to the group to get existing plock
-   state */
-
-void retrieve_plocks(struct lockspace *ls, uint32_t *sig)
+static void free_r_lists(struct resource *r)
 {
-	SaCkptCheckpointHandleT h;
-	SaCkptSectionIterationHandleT itr;
-	SaCkptSectionDescriptorT desc;
-	SaCkptIOVectorElementT iov;
-	SaNameT name;
-	SaAisErrorT rv;
-	char buf[SECTION_NAME_LEN];
-	int len, lock_count, error;
-	uint32_t r_count = 0, p_count = 0;
-	uint64_t r_num, r_num_first = 0, r_num_last = 0;
+	struct posix_lock *po, *po2;
+	struct lock_waiter *w, *w2;
+
+	list_for_each_entry_safe(po, po2, &r->locks, list) {
+		list_del(&po->list);
+		free(po);
+	}
+
+	list_for_each_entry_safe(w, w2, &r->waiters, list) {
+		list_del(&w->list);
+		free(w);
+	}
+}
+
+void receive_plocks_data(struct lockspace *ls, struct dlm_header *hd, int len)
+{
+	struct resource_data *rd;
+	struct plock_data *pp;
+	struct posix_lock *po;
+	struct lock_waiter *w;
+	struct resource *r;
+	uint64_t num;
+	uint32_t count;
+	uint32_t flags;
+	int owner;
+	int i;
 
 	if (!cfgd_enable_plock || ls->disable_plock)
 		return;
 
-	log_group(ls, "retrieve_plocks");
+	if (!ls->need_plocks)
+		return;
 
-	len = snprintf((char *)name.value, SA_MAX_NAME_LENGTH, "dlmplock.%s",
-		       ls->name);
-	name.length = len;
+	if (!ls->save_plocks)
+		return;
 
- open_retry:
-	rv = saCkptCheckpointOpen(system_ckpt_handle, &name, NULL,
-				  SA_CKPT_CHECKPOINT_READ, 0, &h);
-	if (rv == SA_AIS_ERR_TRY_AGAIN) {
-		log_group(ls, "retrieve_plocks ckpt open retry");
-		sleep(1);
-		goto open_retry;
-	}
-	if (rv != SA_AIS_OK) {
-		log_error("retrieve_plocks ckpt open error %d %s",
-			  rv, ls->name);
+	ls->recv_plocks_data_count++;
+
+	if (len < sizeof(struct dlm_header) + sizeof(struct resource_data)) {
+		log_elock(ls, "recv_plocks_data %d:%u bad len %d",
+			  hd->nodeid, hd->msgdata, len);
 		return;
 	}
 
- init_retry:
-	rv = saCkptSectionIterationInitialize(h, SA_CKPT_SECTIONS_ANY, 0, &itr);
-	if (rv == SA_AIS_ERR_TRY_AGAIN) {
-		log_group(ls, "retrieve_plocks ckpt iterinit retry");
-		sleep(1);
-		goto init_retry;
-	}
-	if (rv != SA_AIS_OK) {
-		log_error("retrieve_plocks ckpt iterinit error %d %s",
-			  rv, ls->name);
-		goto out;
-	}
+	rd = (struct resource_data *)((char *)hd + sizeof(struct dlm_header));
+	num = le64_to_cpu(rd->number);
+	owner = le32_to_cpu(rd->owner);
+	count = le32_to_cpu(rd->lock_count);
+	flags = le32_to_cpu(rd->flags);
 
-	while (1) {
-	 next_retry:
-		rv = saCkptSectionIterationNext(itr, &desc);
-		if (rv == SA_AIS_ERR_NO_SECTIONS)
-			break;
-		if (rv == SA_AIS_ERR_TRY_AGAIN) {
-			log_group(ls, "retrieve_plocks ckpt iternext retry");
-			sleep(1);
-			goto next_retry;
+	if (flags & RD_CONTINUE) {
+		r = search_resource(ls, num);
+		if (!r) {
+			log_elock(ls, "recv_plocks_data %d:%u n %llu not found",
+				  hd->nodeid, hd->msgdata, (unsigned long long)num);
+			return;
 		}
-		if (rv != SA_AIS_OK) {
-			log_error("retrieve_plocks ckpt iternext error %d %s",
-				  rv, ls->name);
-			goto out_it;
-		}
-
-		if (!desc.sectionId.idLen)
-			continue;
-
-		iov.sectionId = desc.sectionId;
-		iov.dataBuffer = &section_buf;
-		iov.dataSize = desc.sectionSize;
-		iov.dataOffset = 0;
-
-		/* for debug print */
-		memset(&buf, 0, sizeof(buf));
-		snprintf(buf, SECTION_NAME_LEN, "%s", desc.sectionId.id);
-
-	 read_retry:
-		rv = saCkptCheckpointRead(h, &iov, 1, NULL);
-		if (rv == SA_AIS_ERR_TRY_AGAIN) {
-			log_group(ls, "retrieve_plocks ckpt read retry");
-			sleep(1);
-			goto read_retry;
-		}
-		if (rv != SA_AIS_OK) {
-			log_error("retrieve_plocks ckpt read error %d %s",
-				  rv, ls->name);
-			goto out_it;
-		}
-
-		/* we'll get empty (zero length) sections for resources with
-		   no locks, which exist in ownership mode; the resource
-		   name and owner come from the section id */
-
-		log_plock(ls, "rd sect len %llu \"%s\"",
-			  (unsigned long long)iov.readSize, buf);
-				
-		section_len = iov.readSize;
-
-		if (section_len % sizeof(struct pack_plock)) {
-			log_error("retrieve_plocks bad section len %d %s",
-				  section_len, ls->name);
-			continue;
-		}
-
-		r_num = 0;
-		lock_count = 0;
-
-		error = unpack_section_buf(ls, (char *)desc.sectionId.id,
-					   desc.sectionId.idLen, &r_num,
-					   &lock_count);
-		if (error < 0)
-			continue;
-
-		r_count++;
-		p_count += lock_count;
-
-		if (!r_num_first)
-			r_num_first = r_num;
-		r_num_last = r_num;
+		log_plock(ls, "recv_plocks_data %d:%u n %llu continue",
+			  hd->nodeid, hd->msgdata, (unsigned long long)num);
+		goto unpack;
 	}
 
- out_it:
-	saCkptSectionIterationFinalize(itr);
- out:
-	saCkptCheckpointClose(h);
+	r = malloc(sizeof(struct resource));
+	if (!r) {
+		log_elock(ls, "recv_plocks_data %d:%u n %llu no mem",
+			  hd->nodeid, hd->msgdata, (unsigned long long)num);
+		return;
+	}
+	memset(r, 0, sizeof(struct resource));
+	INIT_LIST_HEAD(&r->locks);
+	INIT_LIST_HEAD(&r->waiters);
+	INIT_LIST_HEAD(&r->pending);
 
-	*sig = (0xFFFFFFFF & r_num_first) ^ (0xFFFFFFFF & r_num_last) ^ r_count;
+	if (!cfgd_plock_ownership) {
+		if (owner) {
+			log_elock(ls, "recv_plocks_data %d:%u n %llu bad owner %d",
+				  hd->nodeid, hd->msgdata, (unsigned long long)num,
+				  owner);
+			goto fail_free;
+		}
+	} else {
+		if (!owner)
+			r->flags |= R_GOT_UNOWN;
 
-	log_group(ls, "retrieve_plocks first %llu last %llu r_count %u "
-		  "p_count %u sig %x",
-		  (unsigned long long)r_num_first,
-		  (unsigned long long)r_num_last,
-		  r_count, p_count, *sig);
-	log_plock(ls, "retrieve_plocks first %llu last %llu r_count %u "
-		  "p_count %u sig %x",
-		  (unsigned long long)r_num_first,
-		  (unsigned long long)r_num_last,
-		  r_count, p_count, *sig);
+		/* no locks should be included for owned resources */
+
+		if (owner && count) {
+			log_elock(ls, "recv_plocks_data %d:%u n %llu o %d bad count %u",
+				  (unsigned long long)num, owner, count);
+			goto fail_free;
+		}
+	}
+
+	r->number = num;
+	r->owner = owner;
+
+ unpack:
+	if (len < sizeof(struct dlm_header) +
+		  sizeof(struct resource_data) +
+		  sizeof(struct plock_data) * count) {
+		log_elock(ls, "recv_plocks_data %d:%u count %u bad len %d",
+			  hd->nodeid, hd->msgdata, count, len);
+		goto fail_free;
+	}
+
+	pp = (struct plock_data *)((char *)rd + sizeof(struct resource_data));
+
+	for (i = 0; i < count; i++) {
+		if (!pp->waiter) {
+			po = malloc(sizeof(struct posix_lock));
+			if (!po)
+				goto fail_free;
+			po->start	= le64_to_cpu(pp->start);
+			po->end		= le64_to_cpu(pp->end);
+			po->owner	= le64_to_cpu(pp->owner);
+			po->pid		= le32_to_cpu(pp->pid);
+			po->nodeid	= le32_to_cpu(pp->nodeid);
+			po->ex		= pp->ex;
+			list_add_tail(&po->list, &r->locks);
+		} else {
+			w = malloc(sizeof(struct lock_waiter));
+			if (!w)
+				goto fail_free;
+			w->info.start	= le64_to_cpu(pp->start);
+			w->info.end	= le64_to_cpu(pp->end);
+			w->info.owner	= le64_to_cpu(pp->owner);
+			w->info.pid	= le32_to_cpu(pp->pid);
+			w->info.nodeid	= le32_to_cpu(pp->nodeid);
+			w->info.ex	= pp->ex;
+			list_add_tail(&w->list, &r->waiters);
+		}
+		pp++;
+	}
+
+	log_plock(ls, "recv_plocks_data %d:%u n %llu o %d locks %d len %d",
+		  hd->nodeid, hd->msgdata, (unsigned long long)r->number,
+		  r->owner, count, len);
+
+	if (!(flags & RD_CONTINUE)) {
+		list_add_tail(&r->list, &ls->plock_resources);
+		rb_insert_plock_resource(ls, r);
+	}
+	return;
+
+ fail_free:
+	if (!(flags & RD_CONTINUE)) {
+		free_r_lists(r);
+		free(r);
+	}
+	return;
+}
+
+void clear_plocks_data(struct lockspace *ls)
+{
+	struct resource *r, *r2;
+	uint32_t count = 0;
+
+	if (!cfgd_enable_plock || ls->disable_plock)
+		return;
+
+	list_for_each_entry_safe(r, r2, &ls->plock_resources, list) {
+		free_r_lists(r);
+		rb_del_plock_resource(ls, r);
+		list_del(&r->list);
+		free(r);
+		count++;
+	}
+
+	log_dlock(ls, "clear_plocks_data done %u recv_plocks_data_count %u",
+		  count, ls->recv_plocks_data_count);
+
+	ls->recv_plocks_data_count = 0;
 }
 
 /* Called when a node has failed, or we're unmounting.  For a node failure, we
@@ -2346,10 +2109,10 @@ void purge_plocks(struct lockspace *ls, int nodeid, int unmount)
 	if (purged)
 		ls->last_plock_time = time(NULL);
 
-	log_plock(ls, "purged %d plocks for %d", purged, nodeid);
+	log_dlock(ls, "purged %d plocks for %d", purged, nodeid);
 }
 
-int fill_plock_dump_buf(struct lockspace *ls)
+int copy_plock_state(struct lockspace *ls, char *buf, int *len_out)
 {
 	struct posix_lock *po;
 	struct lock_waiter *w;
@@ -2358,9 +2121,6 @@ int fill_plock_dump_buf(struct lockspace *ls)
 	int rv = 0;
 	int len = DLMC_DUMP_SIZE, pos = 0, ret;
 
-	memset(plock_dump_buf, 0, sizeof(plock_dump_buf));
-	plock_dump_len = 0;
-
 	gettimeofday(&now, NULL);
 
 	list_for_each_entry(r, &ls->plock_resources, list) {
@@ -2368,7 +2128,7 @@ int fill_plock_dump_buf(struct lockspace *ls)
 		if (list_empty(&r->locks) &&
 		    list_empty(&r->waiters) &&
 		    list_empty(&r->pending)) {
-			ret = snprintf(plock_dump_buf + pos, len - pos,
+			ret = snprintf(buf + pos, len - pos,
 			      "%llu rown %d unused_ms %llu\n",
 			      (unsigned long long)r->number, r->owner,
 			      (unsigned long long)time_diff_ms(&r->last_access,
@@ -2382,7 +2142,7 @@ int fill_plock_dump_buf(struct lockspace *ls)
 		}
 
 		list_for_each_entry(po, &r->locks, list) {
-			ret = snprintf(plock_dump_buf + pos, len - pos,
+			ret = snprintf(buf + pos, len - pos,
 			      "%llu %s %llu-%llu nodeid %d pid %u owner %llx rown %d\n",
 			      (unsigned long long)r->number,
 			      po->ex ? "WR" : "RD",
@@ -2399,7 +2159,7 @@ int fill_plock_dump_buf(struct lockspace *ls)
 		}
 
 		list_for_each_entry(w, &r->waiters, list) {
-			ret = snprintf(plock_dump_buf + pos, len - pos,
+			ret = snprintf(buf + pos, len - pos,
 			      "%llu %s %llu-%llu nodeid %d pid %u owner %llx rown %d WAITING\n",
 			      (unsigned long long)r->number,
 			      w->info.ex ? "WR" : "RD",
@@ -2416,7 +2176,7 @@ int fill_plock_dump_buf(struct lockspace *ls)
 		}
 
 		list_for_each_entry(w, &r->pending, list) {
-			ret = snprintf(plock_dump_buf + pos, len - pos,
+			ret = snprintf(buf + pos, len - pos,
 			      "%llu %s %llu-%llu nodeid %d pid %u owner %llx rown %d PENDING\n",
 			      (unsigned long long)r->number,
 			      w->info.ex ? "WR" : "RD",
@@ -2433,7 +2193,7 @@ int fill_plock_dump_buf(struct lockspace *ls)
 		}
 	}
  out:
-	plock_dump_len = pos;
+	*len_out = pos;
 	return rv;
 }
 

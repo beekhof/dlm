@@ -201,8 +201,10 @@ const char *msg_name(int type)
 		return "plock_sync_lock";
 	case DLM_MSG_PLOCK_SYNC_WAITER:
 		return "plock_sync_waiter";
-	case DLM_MSG_PLOCKS_STORED:
-		return "plocks_stored";
+	case DLM_MSG_PLOCKS_DATA:
+		return "plocks_data";
+	case DLM_MSG_PLOCKS_DONE:
+		return "plocks_done";
 	case DLM_MSG_DEADLK_CYCLE_START:
 		return "deadlk_cycle_start";
 	case DLM_MSG_DEADLK_CYCLE_END:
@@ -850,7 +852,7 @@ static void cleanup_changes(struct lockspace *ls)
    (although it may be able to reuse the ckpt if no plock state has changed).
 */
 
-static void set_plock_ckpt_node(struct lockspace *ls)
+static void set_plock_data_node(struct lockspace *ls)
 {
 	struct change *cg = list_first_entry(&ls->changes, struct change, list);
 	struct member *memb;
@@ -864,20 +866,10 @@ static void set_plock_ckpt_node(struct lockspace *ls)
 			low = memb->nodeid;
 	}
 
-	log_group(ls, "set_plock_ckpt_node from %d to %d",
-		  ls->plock_ckpt_node, low);
+	log_dlock(ls, "set_plock_data_node from %d to %d",
+		  ls->plock_data_node, low);
 
-	if (ls->plock_ckpt_node == our_nodeid && low != our_nodeid) {
-		/* Close ckpt so it will go away when the new ckpt_node
-		   unlinks it prior to creating a new one; if we fail
-		   our open ckpts are automatically closed.  At this point
-		   the ckpt has not been unlinked, but won't be held open by
-		   anyone.  We use the max "retentionDuration" to stop the
-		   system from cleaning up ckpts that are open by no one. */
-		close_plock_checkpoint(ls);
-	}
-
-	ls->plock_ckpt_node = low;
+	ls->plock_data_node = low;
 }
 
 static struct id_info *get_id_struct(struct id_info *ids, int count, int size,
@@ -1089,32 +1081,25 @@ static void receive_start(struct lockspace *ls, struct dlm_header *hd, int len)
 	memb->start = 1;
 }
 
-static void receive_plocks_stored(struct lockspace *ls, struct dlm_header *hd,
-				  int len)
+static void receive_plocks_done(struct lockspace *ls, struct dlm_header *hd,
+				int len)
 {
 	struct ls_info *li;
 	struct id_info *ids;
-	uint32_t sig;
 
-	log_group(ls, "receive_plocks_stored %d:%u flags %x sig %x "
-		  "need_plocks %d", hd->nodeid, hd->msgdata, hd->flags,
-		  hd->msgdata2, ls->need_plocks);
-
-	log_plock(ls, "receive_plocks_stored %d:%u flags %x sig %x "
-		  "need_plocks %d", hd->nodeid, hd->msgdata, hd->flags,
-		  hd->msgdata2, ls->need_plocks);
-
-	ls->last_plock_sig = hd->msgdata2;
+	log_dlock(ls, "receive_plocks_done %d:%u flags %x plocks_data %u need %d save %d",
+		  hd->nodeid, hd->msgdata, hd->flags, hd->msgdata2,
+		  ls->need_plocks, ls->save_plocks);
 
 	if (!ls->need_plocks)
 		return;
 
-	/* a confchg arrived between the last start and the plocks_stored msg,
-	   so we ignore this plocks_stored msg and wait to read the ckpt until
-	   the next plocks_stored msg following the current start */
-   
-	if (!list_empty(&ls->changes) || !ls->started_change) {
-		log_group(ls, "receive_plocks_stored %d:%u ignore",
+	if (ls->need_plocks && !ls->save_plocks)
+		return;
+
+	if (!ls->started_change) {
+		/* don't think this should happen */
+		log_elock(ls, "receive_plocks_done %d:%u no started_change",
 			  hd->nodeid, hd->msgdata);
 		return;
 	}
@@ -1125,26 +1110,27 @@ static void receive_plocks_stored(struct lockspace *ls, struct dlm_header *hd,
 	ids_in(li, ids);
 
 	if (!match_change(ls, ls->started_change, hd, li, ids)) {
-		log_group(ls, "receive_plocks_stored %d:%u ignore no match",
+		/* don't think this should happen */
+		log_elock(ls, "receive_plocks_done %d:%u no match_change",
 			  hd->nodeid, hd->msgdata);
+
+		/* remove/free anything we've saved from
+		   receive_plocks_data messages that weren't for us */
+		clear_plocks_data(ls);
 		return;
 	}
 
-	retrieve_plocks(ls, &sig);
-
-	if ((hd->flags & DLM_MFLG_PLOCK_SIG) && (sig != hd->msgdata2)) {
-		log_error("lockspace %s plock disabled our sig %x "
-			  "nodeid %d sig %x", ls->name, sig, hd->nodeid,
-			  hd->msgdata2);
-		ls->disable_plock = 1;
-		ls->need_plocks = 1; /* don't set HAVEPLOCK */
-		ls->save_plocks = 0;
-		return;
+	if (ls->recv_plocks_data_count != hd->msgdata2) {
+		log_elock(ls, "receive_plocks_done plocks_data %u recv %u",
+			  hd->msgdata2, ls->recv_plocks_data_count);
 	}
 
 	process_saved_plocks(ls);
 	ls->need_plocks = 0;
 	ls->save_plocks = 0;
+
+	log_dlock(ls, "receive_plocks_done %d:%u plocks_data_count %u",
+		  hd->nodeid, hd->msgdata, ls->recv_plocks_data_count);
 }
 
 static void send_info(struct lockspace *ls, struct change *cg, int type,
@@ -1203,29 +1189,29 @@ static void send_info(struct lockspace *ls, struct change *cg, int type,
 		id++;
 	}
 
-	log_group(ls, "send_%s cg %u flags %x data2 %x counts %u %d %d %d %d",
-		  type == DLM_MSG_START ? "start" : "plocks_stored",
-		  cg->seq, hd->flags, hd->msgdata2, ls->started_count,
-		  cg->member_count, cg->joined_count, cg->remove_count,
-		  cg->failed_count);
-
 	dlm_send_message(ls, buf, len);
 
 	free(buf);
 }
 
-static void send_start(struct lockspace *ls)
+static void send_start(struct lockspace *ls, struct change *cg)
 {
-	struct change *cg = list_first_entry(&ls->changes, struct change, list);
+	log_group(ls, "send_start %d:%u counts %u %d %d %d %d",
+		  our_nodeid, cg->seq, ls->started_count,
+		  cg->member_count, cg->joined_count, cg->remove_count,
+		  cg->failed_count);
 
 	send_info(ls, cg, DLM_MSG_START, 0, 0);
 }
 
-static void send_plocks_stored(struct lockspace *ls, uint32_t sig)
+static void send_plocks_done(struct lockspace *ls, struct change *cg, uint32_t plocks_data)
 {
-	struct change *cg = list_first_entry(&ls->changes, struct change, list);
+	log_dlock(ls, "send_plocks_done %d:%u counts %u %d %d %d %d plocks_data %u",
+		  our_nodeid, cg->seq, ls->started_count,
+		  cg->member_count, cg->joined_count, cg->remove_count,
+		  cg->failed_count, plocks_data);
 
-	send_info(ls, cg, DLM_MSG_PLOCKS_STORED, DLM_MFLG_PLOCK_SIG, sig);
+	send_info(ls, cg, DLM_MSG_PLOCKS_DONE, 0, plocks_data);
 }
 
 static int same_members(struct change *cg1, struct change *cg2)
@@ -1272,74 +1258,58 @@ static void prepare_plocks(struct lockspace *ls)
 {
 	struct change *cg = list_first_entry(&ls->changes, struct change, list);
 	struct member *memb;
-	uint32_t sig;
-
-	log_plock(ls, "prepare_plocks");
+	uint32_t plocks_data;
 
 	if (!cfgd_enable_plock || ls->disable_plock)
 		return;
 
-	/* if we're the only node in the lockspace, then we are the ckpt_node
+	log_dlock(ls, "prepare_plocks");
+
+	/* if we're the only node in the lockspace, then we are the data_node
 	   and we don't need plocks */
 
 	if (cg->member_count == 1) {
 		list_for_each_entry(memb, &cg->members, list) {
 			if (memb->nodeid != our_nodeid) {
-				log_error("prepare_plocks other member %d",
+				log_elock(ls, "prepare_plocks other member %d",
 					  memb->nodeid);
 			}
 		}
-		ls->plock_ckpt_node = our_nodeid;
+		ls->plock_data_node = our_nodeid;
 		ls->need_plocks = 0;
 		return;
 	}
 
 	/* the low node that indicated it had plock state in its last
-	   start message is the ckpt_node */
+	   start message is the data_node */
 
-	set_plock_ckpt_node(ls);
+	set_plock_data_node(ls);
 
 	/* there is no node with plock state, so there's no syncing to do */
 
-	if (!ls->plock_ckpt_node) {
+	if (!ls->plock_data_node) {
 		ls->need_plocks = 0;
 		ls->save_plocks = 0;
 		return;
 	}
 
-	/* We save all plock messages from the time that the low node saves
-	   existing plock state in the ckpt to the time that we read that state
-	   from the ckpt. */
+	/* We save all plock messages received after our own confchg and
+	   apply them after we receive the plocks_done message from the
+	   data_node. */
 
 	if (ls->need_plocks) {
+		log_dlock(ls, "save_plocks start");
 		ls->save_plocks = 1;
 		return;
 	}
 
-	if (ls->plock_ckpt_node != our_nodeid)
+	if (ls->plock_data_node != our_nodeid)
 		return;
 
-	/* At each start, a ckpt is written if there have been nodes added
-	   since the last start/ckpt.  If no nodes have been added, no one
-	   does anything with ckpts.  If the node that wrote the last ckpt
-	   is no longer the ckpt_node, the new ckpt_node will unlink and
-	   write a new one.  If the node that wrote the last ckpt is still
-	   the ckpt_node and no plock state has changed since the last ckpt,
-	   it will just leave the old ckpt and not write a new one.
-	 
-	   A new ckpt_node will send a stored message even if it doesn't
-	   write a ckpt because new nodes in the previous start may be
-	   waiting to read the ckpt from the previous ckpt_node after ignoring
-	   the previous stored message.  They will read the ckpt from the
-	   previous ckpt_node upon receiving the stored message from us. */
+	if (nodes_added(ls))
+		send_all_plocks_data(ls, cg->seq, &plocks_data);
 
-	if (nodes_added(ls)) {
-		store_plocks(ls, &sig);
-		ls->last_plock_sig = sig;
-	} else {
-		sig = ls->last_plock_sig;
-	}
-	send_plocks_stored(ls, sig);
+	send_plocks_done(ls, cg, plocks_data);
 }
 
 static void apply_changes(struct lockspace *ls)
@@ -1355,7 +1325,7 @@ static void apply_changes(struct lockspace *ls)
 	case CGST_WAIT_CONDITIONS:
 		if (wait_conditions_done(ls)) {
 			send_nacks(ls, cg);
-			send_start(ls);
+			send_start(ls, cg);
 			cg->state = CGST_WAIT_MESSAGES;
 		}
 		break;
@@ -1556,10 +1526,11 @@ static void confchg_cb(cpg_handle_t handle,
 
 	apply_changes(ls);
 
+#if 0
 	deadlk_confchg(ls, member_list, member_list_entries,
 		       left_list, left_list_entries,
 		       joined_list, joined_list_entries);
-
+#endif
 }
 
 static void dlm_header_in(struct dlm_header *hd)
@@ -1687,16 +1658,27 @@ static void deliver_cb(cpg_handle_t handle,
 				  cfgd_plock_ownership);
 		break;
 
-	case DLM_MSG_PLOCKS_STORED:
+	case DLM_MSG_PLOCKS_DATA:
 		if (ls->disable_plock)
 			break;
 		if (cfgd_enable_plock)
-			receive_plocks_stored(ls, hd, len);
+			receive_plocks_data(ls, hd, len);
 		else
 			log_error("msg %d nodeid %d enable_plock %d",
 				  hd->type, nodeid, cfgd_enable_plock);
 		break;
 
+	case DLM_MSG_PLOCKS_DONE:
+		if (ls->disable_plock)
+			break;
+		if (cfgd_enable_plock)
+			receive_plocks_done(ls, hd, len);
+		else
+			log_error("msg %d nodeid %d enable_plock %d",
+				  hd->type, nodeid, cfgd_enable_plock);
+		break;
+
+#if 0
 	case DLM_MSG_DEADLK_CYCLE_START:
 		if (cfgd_enable_deadlk)
 			receive_cycle_start(ls, hd, len);
@@ -1728,6 +1710,7 @@ static void deliver_cb(cpg_handle_t handle,
 			log_error("msg %d nodeid %d enable_deadlk %d",
 				  hd->type, nodeid, cfgd_enable_deadlk);
 		break;
+#endif
 
 	default:
 		log_error("unknown msg type %d", hd->type);
@@ -2328,7 +2311,7 @@ int setup_cpg_daemon(void)
 	INIT_LIST_HEAD(&daemon_nodes);
 
 	memset(&our_protocol, 0, sizeof(our_protocol));
-	our_protocol.daemon_max[0] = 1;
+	our_protocol.daemon_max[0] = 2;
 	our_protocol.daemon_max[1] = 1;
 	our_protocol.daemon_max[2] = 1;
 	our_protocol.kernel_max[0] = 1;

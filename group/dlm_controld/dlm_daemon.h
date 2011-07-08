@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdarg.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <limits.h>
@@ -32,8 +33,6 @@
 #include <signal.h>
 #include <sys/time.h>
 #include <dirent.h>
-#include <openais/saAis.h>
-#include <openais/saCkpt.h>
 
 #include <corosync/cpg.h>
 #include <liblogthread.h>
@@ -83,66 +82,24 @@ extern int plock_ci;
 extern struct list_head lockspaces;
 extern int cluster_quorate;
 extern int our_nodeid;
-extern char plock_dump_buf[DLMC_DUMP_SIZE];
-extern int plock_dump_len;
 extern uint32_t control_minor;
 extern uint32_t monitor_minor;
 extern uint32_t plock_minor;
 extern uint32_t old_plock_minor;
 
-/* circular buffer of log_debug and log_error messages */
-extern char daemon_debug_buf[256];
-extern char dump_buf[DLMC_DUMP_SIZE];
-extern int dump_point;
-extern int dump_wrap;
+#define LOG_DUMP_SIZE DLMC_DUMP_SIZE
 
-/* circular buffer of log_plock messages */
-extern char log_plock_line[256];
-extern char log_plock_buf[DLMC_DUMP_SIZE];
-extern int log_plock_point;
-extern int log_plock_wrap;
+#define LOG_PLOCK 0x00010000
 
-void daemon_dump_save(void);
-void log_plock_save(void);
+void log_level(char *name_in, uint32_t level_in, const char *fmt, ...);
 
-#define log_level(lvl, fmt, args...) \
-do { \
-	snprintf(daemon_debug_buf, 255, "%ld " fmt "\n", time(NULL), ##args); \
-	daemon_dump_save(); \
-	logt_print(lvl, fmt "\n", ##args); \
-	if (daemon_debug_opt) \
-		fprintf(stderr, "%s", daemon_debug_buf); \
-} while (0)
+#define log_error(fmt, args...) log_level(NULL, LOG_ERR, fmt, ##args)
+#define log_debug(fmt, args...) log_level(NULL, LOG_DEBUG, fmt, ##args)
+#define log_group(ls, fmt, args...) log_level((ls)->name, LOG_DEBUG, fmt, ##args)
 
-#define log_debug(fmt, args...) log_level(LOG_DEBUG, fmt, ##args)
-#define log_error(fmt, args...) log_level(LOG_ERR, fmt, ##args)
-
-#define log_group(ls, fmt, args...) \
-do { \
-	snprintf(daemon_debug_buf, 255, "%ld %s " fmt "\n", time(NULL), \
-		 (ls)->name, ##args); \
-	daemon_dump_save(); \
-	logt_print(LOG_DEBUG, "%s " fmt "\n", (ls)->name, ##args); \
-	if (daemon_debug_opt) \
-		fprintf(stderr, "%s", daemon_debug_buf); \
-} while (0)
-
-#define log_plock(ls, fmt, args...) \
-do { \
-	snprintf(log_plock_line, 255, "%ld %s " fmt "\n", time(NULL), \
-		 (ls)->name, ##args); \
-	log_plock_save(); \
-	if (daemon_debug_opt && cfgd_plock_debug) \
-		fprintf(stderr, "%s", log_plock_line); \
-} while (0)
-
-#define log_plock_error(ls, fmt, args...) \
-do { \
-	log_level(LOG_ERR, fmt, ##args); \
-	snprintf(log_plock_line, 255, "%ld %s " fmt "\n", time(NULL), \
-		 (ls)->name, ##args); \
-	log_plock_save(); \
-} while (0)
+#define log_plock(ls, fmt, args...) log_level((ls)->name, LOG_PLOCK, fmt, ##args)
+#define log_dlock(ls, fmt, args...) log_level((ls)->name, LOG_PLOCK|LOG_DEBUG, fmt, ##args)
+#define log_elock(ls, fmt, args...) log_level((ls)->name, LOG_PLOCK|LOG_ERR, fmt, ##args)
 
 /* dlm_header types */
 enum {
@@ -153,7 +110,8 @@ enum {
 	DLM_MSG_PLOCK_DROP,
 	DLM_MSG_PLOCK_SYNC_LOCK,
 	DLM_MSG_PLOCK_SYNC_WAITER,
-	DLM_MSG_PLOCKS_STORED,
+	DLM_MSG_PLOCKS_DONE,
+	DLM_MSG_PLOCKS_DATA,
 	DLM_MSG_DEADLK_CYCLE_START,
 	DLM_MSG_DEADLK_CYCLE_END,
 	DLM_MSG_DEADLK_CHECKPOINT_READY,
@@ -202,10 +160,11 @@ struct lockspace {
 
 	/* plock stuff */
 
-	int			plock_ckpt_node;
+	int			plock_data_node;
 	int			need_plocks;
 	int			save_plocks;
 	int			disable_plock;
+	uint32_t		recv_plocks_data_count;
 	uint32_t		associated_mg_id;
 	struct list_head	saved_messages;
 	struct list_head	plock_resources;
@@ -213,13 +172,8 @@ struct lockspace {
 	time_t			last_checkpoint_time;
 	time_t			last_plock_time;
 	struct timeval		drop_resources_last;
-	uint64_t		plock_ckpt_handle;
-	uint64_t		checkpoint_r_num_first;
-	uint64_t		checkpoint_r_num_last;
-	uint32_t		checkpoint_r_count;
-	uint32_t		checkpoint_p_count;
-	uint32_t		last_plock_sig;
 
+#if 0
 	/* deadlock stuff */
 
 	int			deadlk_low_nodeid;
@@ -233,6 +187,7 @@ struct lockspace {
 	struct timeval		last_send_cycle_start;
 	int			cycle_running;
 	int			all_checkpoints_ready;
+#endif
 };
 
 /* action.c */
@@ -334,17 +289,20 @@ void receive_own(struct lockspace *ls, struct dlm_header *hd, int len);
 void receive_sync(struct lockspace *ls, struct dlm_header *hd, int len);
 void receive_drop(struct lockspace *ls, struct dlm_header *hd, int len);
 void process_saved_plocks(struct lockspace *ls);
-void close_plock_checkpoint(struct lockspace *ls);
-void store_plocks(struct lockspace *ls, uint32_t *sig);
-void retrieve_plocks(struct lockspace *ls, uint32_t *sig);
 void purge_plocks(struct lockspace *ls, int nodeid, int unmount);
-int fill_plock_dump_buf(struct lockspace *ls);
+int copy_plock_state(struct lockspace *ls, char *buf, int *len_out);
+
+void send_all_plocks_data(struct lockspace *ls, uint32_t seq, uint32_t *plocks_data);
+void receive_plocks_data(struct lockspace *ls, struct dlm_header *hd, int len);
+void clear_plocks_data(struct lockspace *ls);
 
 /* logging.c */
 
 void init_logging(void);
 void setup_logging(void);
 void close_logging(void);
+void copy_log_dump(char *buf, int *len);
+void copy_log_dump_plock(char *buf, int *len);
 
 /* crc.c */
 uint32_t cpgname_to_crc(const char *data, int len);

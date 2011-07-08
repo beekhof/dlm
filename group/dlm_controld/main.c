@@ -165,9 +165,11 @@ static struct lockspace *create_ls(char *name)
 	INIT_LIST_HEAD(&ls->saved_messages);
 	INIT_LIST_HEAD(&ls->plock_resources);
 	ls->plock_resources_root = RB_ROOT;
+#if 0
 	INIT_LIST_HEAD(&ls->deadlk_nodes);
 	INIT_LIST_HEAD(&ls->transactions);
 	INIT_LIST_HEAD(&ls->resources);
+#endif
  out:
 	return ls;
 }
@@ -408,85 +410,56 @@ static void init_header(struct dlmc_header *h, int cmd, char *name, int result,
 		strncpy(h->name, name, DLM_LOCKSPACE_LEN);
 }
 
+static char copy_buf[LOG_DUMP_SIZE];
+
 static void query_dump_debug(int fd)
 {
 	struct dlmc_header h;
-	int extra_len;
-	int len;
+	int len = 0;
 
-	/* in the case of dump_wrap, extra_len will go in two writes,
-	   first the log tail, then the log head */
-	if (dump_wrap)
-		extra_len = DLMC_DUMP_SIZE;
-	else
-		extra_len = dump_point;
+	copy_log_dump(copy_buf, &len);
 
-	init_header(&h, DLMC_CMD_DUMP_DEBUG, NULL, 0, extra_len);
-	do_write(fd, &h, sizeof(h));
+	init_header(&h, DLMC_CMD_DUMP_DEBUG, NULL, 0, len);
+	send(fd, &h, sizeof(h), MSG_NOSIGNAL);
 
-	if (dump_wrap) {
-		len = DLMC_DUMP_SIZE - dump_point;
-		do_write(fd, dump_buf + dump_point, len);
-		len = dump_point;
-	} else
-		len = dump_point;
-
-	/* NUL terminate the debug string */
-	dump_buf[dump_point] = '\0';
-
-	do_write(fd, dump_buf, len);
+	if (len)
+		send(fd, copy_buf, len, MSG_NOSIGNAL);
 }
 
 static void query_dump_log_plock(int fd)
 {
 	struct dlmc_header h;
-	int extra_len;
-	int len;
+	int len = 0;
 
-	/* in the case of dump_wrap, extra_len will go in two writes,
-	   first the log tail, then the log head */
-	if (log_plock_wrap)
-		extra_len = DLMC_DUMP_SIZE;
-	else
-		extra_len = log_plock_point;
+	copy_log_dump_plock(copy_buf, &len);
 
-	init_header(&h, DLMC_CMD_DUMP_LOG_PLOCK, NULL, 0, extra_len);
-	do_write(fd, &h, sizeof(h));
+	init_header(&h, DLMC_CMD_DUMP_DEBUG, NULL, 0, len);
+	send(fd, &h, sizeof(h), MSG_NOSIGNAL);
 
-	if (log_plock_wrap) {
-		len = DLMC_DUMP_SIZE - log_plock_point;
-		do_write(fd, log_plock_buf + log_plock_point, len);
-		len = log_plock_point;
-	} else
-		len = log_plock_point;
-
-	/* NUL terminate the debug string */
-	log_plock_buf[log_plock_point] = '\0';
-
-	do_write(fd, log_plock_buf, len);
+	if (len)
+		send(fd, copy_buf, len, MSG_NOSIGNAL);
 }
 
 static void query_dump_plocks(int fd, char *name)
 {
 	struct lockspace *ls;
 	struct dlmc_header h;
+	int len = 0;
 	int rv;
 
 	ls = find_ls(name);
 	if (!ls) {
-		plock_dump_len = 0;
 		rv = -ENOENT;
-	} else {
-		/* writes to plock_dump_buf and sets plock_dump_len */
-		rv = fill_plock_dump_buf(ls);
+		goto out;
 	}
 
-	init_header(&h, DLMC_CMD_DUMP_PLOCKS, name, rv, plock_dump_len);
+	rv = copy_plock_state(ls, copy_buf, &len);
+ out:
+	init_header(&h, DLMC_CMD_DUMP_PLOCKS, name, rv, len);
+	send(fd, &h, sizeof(h), MSG_NOSIGNAL);
 
-	do_write(fd, &h, sizeof(h));
-
-	if (plock_dump_len)
-		do_write(fd, plock_dump_buf, plock_dump_len);
+	if (len)
+		send(fd, copy_buf, len, MSG_NOSIGNAL);
 }
 
 /* combines a header and the data and sends it back to the client in
@@ -690,13 +663,14 @@ static void process_connection(int ci)
 			 h.data, NULL, 0);
 		break;
 
+#if 0
 	case DLMC_CMD_DEADLOCK_CHECK:
 		ls = find_ls(h.name);
 		if (ls)
 			send_cycle_start(ls);
 		client_dead(ci);
 		break;
-
+#endif
 	default:
 		log_error("process_connection %d unknown command %d",
 			  ci, h.command);
@@ -932,6 +906,7 @@ static void loop(void)
 	if (rv < 0)
 		goto out;
 
+#if 0
 	if (cfgd_enable_deadlk) {
 		rv = setup_netlink();
 		if (rv < 0)
@@ -940,6 +915,7 @@ static void loop(void)
 
 		setup_deadlock();
 	}
+#endif
 
 	rv = setup_plocks();
 	if (rv < 0)
@@ -1079,8 +1055,10 @@ static void print_usage(void)
 	printf("		Default is %d\n", DEFAULT_ENABLE_FENCING);
 	printf("  -q <num>	Enable (1) or disable (0) quorum recovery dependency\n");
 	printf("		Default is %d\n", DEFAULT_ENABLE_QUORUM);
+#if 0
 	printf("  -d <num>	Enable (1) or disable (0) deadlock detection code\n");
 	printf("		Default is %d\n", DEFAULT_ENABLE_DEADLK);
+#endif
 	printf("  -p <num>	Enable (1) or disable (0) plock code for cluster fs\n");
 	printf("		Default is %d\n", DEFAULT_ENABLE_PLOCK);
 	printf("  -P		Enable plock debugging\n");
@@ -1098,7 +1076,7 @@ static void print_usage(void)
 	printf("  -V		Print program version information, then exit\n");
 }
 
-#define OPTION_STRING "LDKf:q:d:p:Pl:o:t:c:a:hVr:"
+#define OPTION_STRING "LDKf:q:p:Pl:o:t:c:a:hVr:"
 
 static void read_arguments(int argc, char **argv)
 {
@@ -1109,7 +1087,6 @@ static void read_arguments(int argc, char **argv)
 		optchar = getopt(argc, argv, OPTION_STRING);
 
 		switch (optchar) {
-
 		case 'D':
 			daemon_debug_opt = 1;
 			break;
@@ -1247,45 +1224,13 @@ int main(int argc, char **argv)
 	}
 	lockfile();
 	init_logging();
-	log_level(LOG_INFO, "dlm_controld %s started", VERSION);
+	log_level(NULL, LOG_INFO, "dlm_controld %s started", VERSION);
 	signal(SIGTERM, sigterm_handler);
 	set_scheduler();
 
 	loop();
 
 	return 0;
-}
-
-void daemon_dump_save(void)
-{
-	int len, i;
-
-	len = strlen(daemon_debug_buf);
-
-	for (i = 0; i < len; i++) {
-		dump_buf[dump_point++] = daemon_debug_buf[i];
-
-		if (dump_point == DLMC_DUMP_SIZE) {
-			dump_point = 0;
-			dump_wrap = 1;
-		}
-	}
-}
-
-void log_plock_save(void)
-{
-	int len, i;
-
-	len = strlen(log_plock_line);
-
-	for (i = 0; i < len; i++) {
-		log_plock_buf[log_plock_point++] = log_plock_line[i];
-
-		if (log_plock_point == DLMC_DUMP_SIZE) {
-			log_plock_point = 0;
-			log_plock_wrap = 1;
-		}
-	}
 }
 
 int daemon_debug_opt;
@@ -1301,20 +1246,10 @@ int plock_ci;
 struct list_head lockspaces;
 int cluster_quorate;
 int our_nodeid;
-char plock_dump_buf[DLMC_DUMP_SIZE];
-int plock_dump_len;
 uint32_t control_minor;
 uint32_t monitor_minor;
 uint32_t plock_minor;
 uint32_t old_plock_minor;
-char daemon_debug_buf[256];
-char dump_buf[DLMC_DUMP_SIZE];
-int dump_point;
-int dump_wrap;
-char log_plock_line[256];
-char log_plock_buf[DLMC_DUMP_SIZE];
-int log_plock_point;
-int log_plock_wrap;
 
 /* was a config value set on command line?, 0 or 1.
    optk is a kernel option, optd is a daemon option */

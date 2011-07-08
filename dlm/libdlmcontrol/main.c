@@ -88,22 +88,16 @@ static void init_header(struct dlmc_header *h, int cmd, char *name,
 		strncpy(h->name, name, DLM_LOCKSPACE_LEN);
 }
 
+static char copy_buf[DLMC_DUMP_SIZE];
+
 static int do_dump(int cmd, char *name, char *buf)
 {
-	struct dlmc_header h, *rh;
-	char *reply;
-	int reply_len;
-	int fd, rv;
+	struct dlmc_header h;
+	int fd, rv, len;
+
+	memset(copy_buf, 0, DLMC_DUMP_SIZE);
 
 	init_header(&h, cmd, name, 0);
-
-	reply_len = sizeof(struct dlmc_header) + DLMC_DUMP_SIZE;
-	reply = malloc(reply_len);
-	if (!reply) {
-		rv = -1;
-		goto out;
-	}
-	memset(reply, 0, reply_len);
 
 	fd = do_connect(DLMC_QUERY_SOCK_PATH);
 	if (fd < 0) {
@@ -115,16 +109,22 @@ static int do_dump(int cmd, char *name, char *buf)
 	if (rv < 0)
 		goto out_close;
 
-	/* won't always get back the full reply_len */
-	do_read(fd, reply, reply_len);
+	memset(&h, 0, sizeof(h));
 
-	rh = (struct dlmc_header *)reply;
-	rv = rh->data;
+	rv = do_read(fd, &h, sizeof(h));
 	if (rv < 0)
 		goto out_close;
 
-	memcpy(buf, (char *)reply + sizeof(struct dlmc_header),
-	       DLMC_DUMP_SIZE);
+	len = h.len - sizeof(h);
+
+	if (len <= 0 || len > DLMC_DUMP_SIZE)
+		goto out_close;
+
+	rv = do_read(fd, copy_buf, len);
+	if (rv < 0)
+		goto out_close;
+
+	memcpy(buf, copy_buf, len);
  out_close:
 	close(fd);
  out:

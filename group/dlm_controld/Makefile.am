@@ -4,8 +4,8 @@ sbin_PROGRAMS		= dlm_controld
 
 noinst_HEADERS		= config.h dlm_controld.h dlm_daemon.h
 
-dlm_controld_SOURCES	= action.c cpg.c crc.c deadlock.c main.c \
-			  netlink.c plock.c config.c member_cman.c \
+dlm_controld_SOURCES	= action.c cpg.c crc.c main.c \
+			  plock.c config.c member_cman.c \
 			  logging.c rbtree.c
 
 dlm_controld_CPPFLAGS	= -I$(top_srcdir)/dlm/libdlm \
@@ -14,7 +14,6 @@ dlm_controld_CPPFLAGS	= -I$(top_srcdir)/dlm/libdlm \
 
 dlm_controld_CFLAGS	= $(logt_CFLAGS) \
 			  $(cpg_CFLAGS) \
-			  $(sackpt_CFLAGS) \
 			  $(confdb_CFLAGS)
 			  $(ccs_CFLAGS) \
 			  $(fenced_CFLAGS) \
@@ -23,7 +22,6 @@ dlm_controld_CFLAGS	= $(logt_CFLAGS) \
 
 dlm_controld_LDFLAGS	= $(logt_LIBS) \
 			  $(cpg_LIBS) \
-			  $(sackpt_LIBS) \
 			  $(confdb_LIBS) \
 			  $(ccs_LIBS) \
 			  $(fenced_LIBS) \
