@@ -1641,8 +1641,10 @@ void process_plocks(int ci)
 	return;
 
  fail:
-	info.rv = rv;
-	rv = write(plock_device_fd, &info, sizeof(info));
+	if (!(info.flags & DLM_PLOCK_FL_CLOSE)) {
+		info.rv = rv;
+		rv = write(plock_device_fd, &info, sizeof(info));
+	}
 }
 
 void process_saved_plocks(struct lockspace *ls)
