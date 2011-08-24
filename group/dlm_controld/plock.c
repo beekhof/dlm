@@ -3,6 +3,15 @@
 
 #include <linux/dlm_plock.h>
 
+/* FIXME: remove this once everyone is using the version of
+ * dlm_plock.h which defines it */
+
+#ifndef DLM_PLOCK_FL_CLOSE
+#warning DLM_PLOCK_FL_CLOSE undefined. Enabling build workaround.
+#define DLM_PLOCK_FL_CLOSE 1
+#define DLM_PLOCK_BUILD_WORKAROUND 1
+#endif
+
 static uint32_t plock_read_count;
 static uint32_t plock_recv_count;
 static uint32_t plock_rate_delays;
@@ -785,12 +794,7 @@ static void do_unlock(struct lockspace *ls, struct dlm_plock_info *in,
 
 	rv = unlock_internal(ls, r, in);
 
-/* FIXME: remove this once everyone is using the version of
- * dlm_plock.h which defines it */
-
-#ifndef DLM_PLOCK_FL_CLOSE
-#warning DLM_PLOCK_FL_CLOSE undefined. Enabling build workaround.
-#define DLM_PLOCK_FL_CLOSE 1
+#ifdef DLM_PLOCK_BUILD_WORKAROUND
 	if (in->pad & DLM_PLOCK_FL_CLOSE) {
 #else
 	if (in->flags & DLM_PLOCK_FL_CLOSE) {
@@ -1641,7 +1645,11 @@ void process_plocks(int ci)
 	return;
 
  fail:
+#ifdef DLM_PLOCK_BUILD_WORKAROUND
+	if (!(info.pad & DLM_PLOCK_FL_CLOSE)) {
+#else
 	if (!(info.flags & DLM_PLOCK_FL_CLOSE)) {
+#endif
 		info.rv = rv;
 		rv = write(plock_device_fd, &info, sizeof(info));
 	}
