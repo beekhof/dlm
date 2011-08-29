@@ -309,13 +309,11 @@ static int create_path(const char *path)
 
 	old_umask = umask(0022);
 	rv = mkdir(path, 0777);
-	umask(old_umask);
-
-	if (rv < 0) {
+	if (rv < 0 && errno == EEXIST)
+		rv = 0;
+	if (rv < 0)
 		log_error("%s: mkdir failed: %d", path, errno);
-		if (errno == EEXIST)
-			rv = 0;
-	}
+	umask(old_umask);
 	return rv;
 }
 
