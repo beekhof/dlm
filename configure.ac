@@ -114,7 +114,6 @@ KERNEL_CPPFLAGS="-I$KERNEL_DIR/include"
 
 PKG_CHECK_MODULES([corosync],[corosync])
 PKG_CHECK_MODULES([cpg],[libcpg])
-PKG_CHECK_MODULES([sackpt],[libSaCkpt])
 PKG_CHECK_MODULES([logt],[liblogthread])
 PKG_CHECK_MODULES([ccs],[libccs])
 PKG_CHECK_MODULES([cfg],[libcfg])
