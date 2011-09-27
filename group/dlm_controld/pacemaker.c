@@ -230,25 +230,9 @@ char *nodeid2name(int nodeid) {
     return strdup(node->uname);
 }
 
-static int pcmk_cluster_fd = 0;
-
-static void attrd_deadfn(int ci) 
-{
-    log_error("%s: Lost connection to the cluster", __FUNCTION__);
-    pcmk_cluster_fd = 0;
-    return;
-}
-
 void kick_node_from_cluster(int nodeid)
 {
-    int fd = pcmk_cluster_fd;
-    int rc = crm_terminate_member_no_mainloop(nodeid, NULL, &fd);
-    
-    if(fd > 0 && fd != pcmk_cluster_fd) {
-	pcmk_cluster_fd = fd;
-	client_add(pcmk_cluster_fd, NULL, attrd_deadfn);
-    }
-    
+    int rc = crm_terminate_member_no_mainloop(nodeid, NULL, NULL);   
     switch(rc) {
 	case 0:
 	    log_debug("Requested that node %d be kicked from the cluster", nodeid);
@@ -266,95 +250,55 @@ void kick_node_from_cluster(int nodeid)
     return;
 }
 
-cib_t *cib = NULL;
-
-static void cib_deadfn(int ci) 
-{
-    log_error("Lost connection to the cib");
-    cib = NULL; /* TODO: memory leak in unlikely error path */
-    return;
-}
-
-static cib_t *cib_connect(void) 
-{
-    int rc = 0;
-    int cib_fd = 0;
-    if(cib) {
-	return cib;
-    }
-    
-    cib = cib_new();
-    rc = cib->cmds->signon_raw(cib, crm_system_name, cib_command, &cib_fd, NULL);
-    if(rc != cib_ok) {
-	log_error("Signon to cib failed: %s", cib_error2string(rc));
-	cib = NULL; /* TODO: memory leak in unlikely error path */
-
-    } else {
-	client_add(cib_fd, NULL, cib_deadfn);
-    }
-    return cib;
-}
-
-
 int fence_in_progress(int *in_progress)
 {
-    int rc = 0;
-    xmlNode *xpath_data;
-
-    cib_connect();    
-    if(cib == NULL) {
-	return -1;
-    }
-
-    /* TODO: Not definitive - but a good approximation */
-    rc = cib->cmds->query(cib, "//nvpar[@name='terminate']", &xpath_data,
-			  cib_xpath|cib_scope_local|cib_sync_call);
-
-    if(xpath_data == NULL) {
-	*in_progress = 0;
-	return 0;
-    }
-
-    log_debug("Fencing in progress: %s", xpath_data?"true":"false");	
-    free_xml(xpath_data);
-    *in_progress = 1;
-    return 1;
+    *in_progress = 0;
+    return 0;
 }
-
-#define XPATH_MAX  1024
 
 int fence_node_time(int nodeid, uint64_t *last_fenced_time)
 {
     int rc = 0;
-    xmlNode *xpath_data;
-    char xpath_query[XPATH_MAX];
-    crm_node_t *node = crm_get_peer(nodeid, NULL);
+    const char *uname = NULL;
+    crm_node_t *node = crm_get_peer(nodeid, uname);
+    stonith_history_t *history, *hp = NULL;
 
     if(last_fenced_time) {
 	*last_fenced_time = 0;
     }
 
-    if(node == NULL || node->uname == NULL) {
-	log_error("Nothing known about node %d", nodeid);	
-	return 0;
+    if (node && node->uname) {
+        uname = node->uname;
+        st = stonith_api_new();
+
+    } else {
+        crm_err("Nothing known about node id=%d", nodeid);
+        return 0;
+    }
+    
+    if(st) {
+	rc = st->cmds->connect(st, crm_system_name, NULL);
     }
 
-    cib_connect();
-    if(cib == NULL) {
-	return -1;
+    if(rc == stonith_ok) {
+        st->cmds->history(st, st_opt_sync_call, uname, &history, 120);
+        for(hp = history; hp; hp = hp->next) {
+            if(hp->state == st_done) {
+                *last_fenced_time = hp->completed;
+            }
+        }
     }
-
-    snprintf(xpath_query, XPATH_MAX, "//lrm[@id='%s']", node->uname);
-    rc = cib->cmds->query(
-	cib, xpath_query, &xpath_data, cib_xpath|cib_scope_local|cib_sync_call);
-
-    if(xpath_data == NULL) {
-	/* the node has been shot - return 'now' */
-	log_debug("Node %d/%s was last shot 'now'", nodeid, node->uname);	
-	*last_fenced_time = time(NULL);
+    
+    if(*last_fenced_time != 0) {
+        log_debug("Node %d/%s was last shot at: %s", nodeid, ctime(*last_fenced_time));	
+    } else {
+        log_debug("It does not appear node %d/%s has been shot", nodeid, uname);
     }
-
-    free_xml(xpath_data);
-    log_debug("It does not appear node %d/%s has been shot", nodeid, node->uname);	
+    
+    if(st) {
+        st->cmds->disconnect(st);
+        stonith_api_delete(st);
+    }
+        
     return 0;
 }
